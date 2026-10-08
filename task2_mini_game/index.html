@@ -1,0 +1,1255 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#071018">
+<meta name="description" content="4개의 CMD에서 오류 로그를 찾아 처리하는 30초 반응속도 게임">
+<title>CMD ALERT | 로그 대응 게임</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23081018'/%3E%3Cpath d='M16 20l12 12-12 12' fill='none' stroke='%2367e8a5' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M32 44h16' stroke='%2367e8a5' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #071018;
+    --surface: #0d1924;
+    --terminal: #070f17;
+    --strong: #eaf3fb;
+    --body: #d4e1ed;
+    --muted: #b1c5d5;
+    --border: #304657;
+    --accent: #77ecb2;
+    --info: #81dcb1;
+    --error: #ff8888;
+    --warn: #ffd27f;
+    --blue: #9ddaff;
+    --done: #dfa2a7;
+  }
+  *,*::before,*::after { box-sizing: border-box; }
+  html { min-width: 320px; }
+  body {
+    min-height: 100vh; margin: 0; background: var(--bg); color: var(--strong);
+    font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    font-size: 16px; line-height: 1.5;
+  }
+  button,select { font: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  .hidden { display: none !important; }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .wrap { width: min(1320px, calc(100% - 28px)); margin: 0 auto; }
+  main { padding: 12px 0 42px; }
+  .game-shell {
+    position: relative; display: grid; grid-template-columns: minmax(0,1fr) 376px;
+    border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    background: var(--surface); box-shadow: 0 16px 46px #0005;
+  }
+  .game-main { min-width: 0; }
+  /* 상태 문구가 READY / PLAYING / PAUSED / SUCCESS로 변해도 조작부 좌표 고정 */
+  .quickbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 84px;
+    align-items: center;
+    column-gap: 14px;
+    min-height: 68px;
+    padding: 10px 18px;
+    background: #101e2b;
+    border-bottom: 1px solid var(--border);
+  }
+  .quick-group { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .difficulty-control { display: flex; align-items: center; gap: 10px; }
+  .field-label,.state-label { color: var(--muted); font-size: 13px; font-weight: 650; }
+  .difficulty-select {
+    padding: 7px 10px; background: #07121c; color: var(--strong);
+    border: 1px solid #59728a; border-radius: 6px; font-size: 15px; min-width: 113px;
+  }
+  .difficulty-select:disabled { opacity: .7; cursor: not-allowed; }
+  .status-box {
+    display: flex; align-items: center; gap: 9px;
+    flex: 0 0 128px; width: 128px; white-space: nowrap;
+  }
+  .status-box strong {
+    display: inline-block; width: 8ch;
+    font: 800 15px ui-monospace, Consolas, monospace;
+    color: var(--accent);
+  }
+  .pause-button, .button {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 42px; padding: 7px 16px; font-size: 15px; font-weight: 750;
+    border-radius: 7px; border: 1px solid var(--accent); background: var(--accent); color: #07160e;
+  }
+  .button:hover { background: #a1ffca; }
+  .button.secondary, .pause-button { border-color: #738ba1; background: #142534; color: var(--strong); }
+  .button.secondary:hover, .pause-button:hover { border-color: var(--accent); }
+  .button:disabled { opacity: .62; cursor: default; }
+  /* 숨길 때도 같은 면적을 유지하여 START 후 줄바꿈이나 좌표 변경을 방지한다. */
+  .pause-button.hidden { display: inline-flex !important; visibility: hidden; pointer-events: none; }
+  .difficulty-detail {
+    color: var(--muted); font-size: 13px; padding: 9px 17px;
+    border-bottom: 1px solid var(--border); min-height: 38px; line-height: 1.45;
+  }
+  .metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border-bottom: 1px solid var(--border); }
+  .metric { padding: 9px 16px; min-width: 0; }
+  .metric + .metric { border-left: 1px solid var(--border); }
+  .metric-label { display: block; color: var(--muted); font-size: 12px; font-weight: 750; letter-spacing: .055em; }
+  .metric-value { display: block; margin-top: 2px; font: 750 21px/1.2 ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .message-bar {
+    min-height: 47px; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 7px 16px; background: #0a1620;
+    border-bottom: 1px solid var(--border);
+  }
+  .message { margin: 0; min-width: 0; color: var(--body); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feedback { margin: 0; flex: none; color: var(--accent); font-weight: 750; font-size: 14px; white-space: nowrap; }
+  .feedback.wrong { color: var(--error); }
+  .feedback.miss { color: var(--warn); }
+  .terminal-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1px; background: var(--border); }
+  .terminal {
+    display: block; height: 240px; min-width: 0; padding: 0; overflow: hidden;
+    background: var(--terminal); color: var(--strong); border: 0; text-align: left;
+  }
+  .terminal:disabled { opacity: 1; cursor: default; }
+  .terminal:not(:disabled):hover { background: #0c1923; }
+  .terminal-header {
+    height: 42px; display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 15px; border-bottom: 1px solid var(--border); background: #12212d;
+  }
+  .terminal-title { font-size: 15px; font-weight: 750; color: var(--strong); }
+  .terminal-key { width: 31px; height: 27px; display: inline-grid; place-items: center; border: 1px solid #6a8398; border-radius: 5px; color: var(--accent); font: 800 14px ui-monospace, Consolas, monospace; }
+  .log-list {
+    height: 198px; display: grid; align-content: end; gap: 2px;
+    margin: 0; padding: 8px 12px; list-style: none; overflow: hidden;
+  }
+  .log-line {
+    min-width: 0; color: var(--body); font: 500 16px/1.25 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
+  }
+  .log-time { color: #b8cada; }
+  .log-level.level-info { color: var(--info); font-weight: 650; }
+  .log-level.level-warn { color: var(--warn); font-weight: 850; }
+  .log-level.level-error,.log-level.level-fatal,.log-level.level-critical { color: var(--error); font-weight: 850; }
+  .handled-error .log-level { color: var(--done); font-weight: 650; }
+  .controls {
+    min-height: 64px; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 17px; border-top: 1px solid var(--border);
+  }
+  .control-help { margin: 0; font-size: 14px; color: var(--muted); }
+  .round-actions { display: flex; }
+  .round-actions .button { min-width: 130px; }
+  /* 종료 버튼: 게임 시작/종료 시에도 크기를 바꾸지 않는다. */
+  .round-actions .button.stop-action {
+    border-color: #e98a8a;
+    background: #35212a;
+    color: #ffd6d6;
+  }
+  .round-actions .button.stop-action:hover { background: #4b2832; }
+  .pause-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+  .pause-actions .button { min-width: 128px; }
+  .result-panel { padding: 17px; border-top: 1px solid var(--border); background: #101e2b; }
+  .result-panel h2 { margin: 0 0 6px; font-size: 21px; }
+  .result-summary { margin: 0 0 12px; font-size: 15px; color: var(--body); }
+  .result-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 8px; }
+  .result-item { padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: #09141e; min-width: 0; }
+  .result-item span { display: block; font-size: 12px; color: var(--muted); }
+  .result-item strong { font-size: 16px; overflow-wrap: anywhere; }
+  .sidebar { border-left: 1px solid var(--border); background: #111e2a; min-width: 0; padding: 21px 20px; }
+  .eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 13px; font-weight: 800; letter-spacing: .09em; }
+  .sidebar h1 { margin: 0; font-size: 24px; line-height: 1.28; letter-spacing: -.035em; }
+  .description { margin: 7px 0 14px; font-size: 15px; color: var(--body); line-height: 1.5; }
+  .section-heading { margin: 0 0 10px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 18px; }
+  .rules { display: grid; gap: 12px; padding: 0; margin: 0; list-style: none; }
+  .rules li { display: grid; grid-template-columns: 29px minmax(0,1fr); gap: 9px; align-items: start; }
+  .rule-num { display: grid; place-items: center; width: 28px; height: 28px; background: #233849; border-radius: 6px; color: var(--blue); font: 800 14px ui-monospace, Consolas, monospace; }
+  .rule-title { display: block; font-size: 16px; font-weight: 780; line-height: 1.3; margin-bottom: 2px; }
+  .rule-desc { display: block; font-size: 15px; color: var(--body); line-height: 1.5; }
+  .level-error { color: var(--error); }
+  .level-warn { color: var(--warn); }
+  .rule-small { font-size: 14px; color: var(--muted); margin: 6px 0 0; }
+  .win-criteria { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+  .win-item { padding: 8px 9px; border: 1px solid #426074; background: #0b1924; border-radius: 6px; }
+  .win-item strong { display: block; color: var(--strong); font-size: 17px; font-variant-numeric: tabular-nums; }
+  .win-item span { display: block; margin-top: 1px; font-size: 12px; color: var(--muted); }
+  .win-caption { margin: 7px 0 0; font-size: 13px; color: var(--muted); }
+  .effects { margin-top: 0; min-width: 0; }
+  .effect-controls { display: flex; flex-wrap: nowrap; gap: 7px; }
+  #soundToggle { width: 106px; }
+  #motionToggle { width: 164px; }
+  .option-toggle {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 36px;
+    border: 1px solid #69859b; border-radius: 6px; padding: 6px 10px; white-space: nowrap;
+    background: #102331; color: var(--strong); font-size: 13px; font-weight: 700;
+  }
+  .option-toggle:hover { border-color: var(--accent); }
+  .option-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+  .audio-status { min-height: 43px; margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .audio-status.warning { color: var(--warn); }
+  .audio-status.success { color: var(--accent); }
+  @keyframes correctPulse { from { box-shadow: inset 0 0 0 2px #77ecb2b8; } to { box-shadow: inset 0 0 0 2px transparent; } }
+  @keyframes wrongPulse { from { box-shadow: inset 0 0 0 2px #ff8888b8; } to { box-shadow: inset 0 0 0 2px transparent; } }
+  @keyframes missPulse { from { box-shadow: inset 0 0 0 2px #ffd27fb8; } to { box-shadow: inset 0 0 0 2px transparent; } }
+  .terminal.fx-correct { animation: correctPulse 230ms ease-out; }
+  .terminal.fx-wrong { animation: wrongPulse 230ms ease-out; }
+  .terminal.fx-miss { animation: missPulse 230ms ease-out; }
+  :root.reduce-motion .terminal { animation: none !important; }
+  .pause-overlay { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: #040b10f0; backdrop-filter: blur(3px); }
+  .pause-dialog { width: min(420px,100%); background: #152736; border: 1px solid #6b889d; border-radius: 10px; padding: 24px; text-align: center; }
+  .pause-dialog h2 { margin: 0 0 7px; font-size: 25px; }
+  .pause-dialog p { margin: 0 0 15px; color: var(--body); }
+  .experiment-section { margin-top: 20px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); overflow: hidden; }
+  .experiment-header { padding: 18px 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); }
+  .experiment-header h2 { margin: 0 0 4px; font-size: 20px; }
+  .experiment-header p { margin: 0; font-size: 14px; color: var(--body); }
+  .experiment-progress { padding: 8px 12px; border: 1px solid #506b7f; border-radius: 6px; white-space: nowrap; font-size: 14px; }
+  .experiment-progress span { color: var(--muted); display: block; font-size: 12px; }
+  .experiment-progress strong { color: var(--blue); }
+  .table-wrap { max-width: 100%; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th,td { padding: 11px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; text-align: right; }
+  th { font-size: 12px; color: var(--muted); font-weight: 800; }
+  th:first-child,td:first-child,th:last-child,td:last-child { text-align: left; }
+  tbody tr:hover { background: #142737; }
+  td.success { color: var(--accent); }
+  td.failed { color: var(--error); }
+  .empty-record { padding: 24px; text-align: center; color: var(--muted); }
+  .summary-section { border-top: 1px solid var(--border); }
+  .summary-section h3 { margin: 0; padding: 13px 20px; border-bottom: 1px solid var(--border); font-size: 18px; }
+  .summary-note { margin: 0; padding: 13px 20px; font-size: 14px; color: var(--muted); }
+  .summary-note.ready { border-left: 3px solid var(--accent); color: var(--body); }
+  .storage-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 20px; border-top: 1px solid var(--border); }
+  .storage-status { margin: 0; font-size: 14px; color: var(--muted); }
+  .storage-status.warning { color: var(--warn); }
+  .storage-status.success { color: var(--accent); }
+  .privacy-note { border-top: 1px solid var(--border); padding: 11px 20px; margin: 0; font-size: 13px; color: var(--muted); }
+  .storage-controls .button { flex: none; }
+  @media (max-width: 1120px) {
+    .game-shell { grid-template-columns: minmax(0,1fr) 338px; }
+    .quickbar { padding-inline: 12px; column-gap: 9px; }
+    .metric { padding-inline: 10px; }
+    .metric-value { font-size: 19px; }
+    .log-line { font-size: 14px; }
+  }
+  @media (max-width: 900px) {
+    .game-shell { display: flex; flex-direction: column-reverse; }
+    .sidebar { border-left: 0; border-bottom: 1px solid var(--border); }
+    .sidebar .rules { grid-template-columns: repeat(3,minmax(0,1fr)); }
+    .sidebar .effects { margin-top: 12px; }
+    .terminal { height: 240px; }
+  }
+  @media (max-width: 620px) {
+    .sidebar .rules { grid-template-columns: 1fr; }
+    .metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .metric:nth-child(3), .metric:nth-child(4) { border-top: 1px solid var(--border); }
+    .metric:nth-child(3) { border-left: none; }
+    .terminal-grid { grid-template-columns: 1fr; }
+    .quickbar {
+      grid-template-columns: minmax(0,1fr) 84px;
+      grid-template-areas: "selection pause" "effects effects";
+      row-gap: 9px;
+    }
+    .quick-group { grid-area: selection; gap: 7px; }
+    .quickbar .effects { grid-area: effects; }
+    .quickbar .pause-button { grid-area: pause; }
+    .status-box { flex-basis: 118px; width: 118px; }
+    #soundToggle { width: 106px; }
+    #motionToggle { width: 164px; }
+    .difficulty-detail { font-size: 12px; }
+    .controls { flex-wrap: wrap; }
+    .round-actions { width: 100%; }
+    .round-actions .button { width: 100%; }
+    .result-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .experiment-header,.storage-controls { flex-direction: column; align-items: stretch; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,*::before,*::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <section class="game-shell" aria-labelledby="gameTitle">
+    <div class="game-main">
+      <div class="quickbar">
+        <div class="quick-group">
+          <div class="difficulty-control"><label class="field-label" for="difficultySelect">난이도</label><select id="difficultySelect" class="difficulty-select" aria-label="난이도 선택"></select></div>
+          <div class="status-box"><span class="state-label">상태</span><strong id="statusText">READY</strong></div>
+        </div>
+      <section class="effects" aria-labelledby="effectsTitle">
+        <h2 id="effectsTitle" class="sr-only">효과 설정</h2>
+        <div class="effect-controls" role="group" aria-label="효과 설정">
+          <button id="soundToggle" class="option-toggle" type="button" aria-pressed="false">효과음 OFF</button>
+          <button id="motionToggle" class="option-toggle" type="button" aria-pressed="false">움직임 줄이기 꺼짐</button>
+        </div>
+      </section>
+        <button id="pauseButton" class="pause-button hidden" type="button">PAUSE</button>
+      </div>
+      <div class="metrics" aria-label="게임 상태">
+        <div class="metric"><span class="metric-label">남은 시간</span><strong id="timeText" class="metric-value">30.0</strong></div>
+        <div class="metric"><span class="metric-label">점수</span><strong id="scoreText" class="metric-value">0 / 1200</strong></div>
+        <div class="metric"><span class="metric-label">정확도</span><strong id="accuracyText" class="metric-value">--</strong></div>
+        <div class="metric"><span class="metric-label">마지막 반응</span><strong id="reactionText" class="metric-value">--</strong></div>
+      </div>
+      <div class="message-bar"><p id="messageText" class="message">START를 누르면 로그 스트림이 시작됩니다.</p><p id="feedbackText" class="feedback" aria-live="polite"></p></div>
+      <div class="terminal-grid" aria-label="CMD 터미널">
+        <button class="terminal" type="button" data-index="0" aria-label="터미널 1 NODE-01" disabled><span class="terminal-header"><span class="terminal-title">01 · NODE-01</span><span class="terminal-key">1</span></span><ul class="log-list" data-log-list="0" aria-hidden="true"></ul></button>
+        <button class="terminal" type="button" data-index="1" aria-label="터미널 2 NODE-02" disabled><span class="terminal-header"><span class="terminal-title">02 · NODE-02</span><span class="terminal-key">2</span></span><ul class="log-list" data-log-list="1" aria-hidden="true"></ul></button>
+        <button class="terminal" type="button" data-index="2" aria-label="터미널 3 NODE-03" disabled><span class="terminal-header"><span class="terminal-title">03 · NODE-03</span><span class="terminal-key">3</span></span><ul class="log-list" data-log-list="2" aria-hidden="true"></ul></button>
+        <button class="terminal" type="button" data-index="3" aria-label="터미널 4 NODE-04" disabled><span class="terminal-header"><span class="terminal-title">04 · NODE-04</span><span class="terminal-key">4</span></span><ul class="log-list" data-log-list="3" aria-hidden="true"></ul></button>
+      </div>
+      <div class="controls"><p class="control-help">오류가 표시된 CMD를 클릭하거나 <strong>1 · 2 · 3 · 4</strong> 키를 누르세요.</p><div class="round-actions"><button id="startButton" class="button" type="button">START</button></div></div>
+      <section id="resultPanel" class="result-panel hidden" aria-label="게임 결과">
+        <h2 id="resultTitle">SYSTEM STABLE</h2><p id="resultSummary" class="result-summary"></p>
+        <div class="result-grid">
+          <div class="result-item"><span>점수</span><strong id="finalScore">0 / 1200</strong></div>
+          <div class="result-item"><span>정답</span><strong id="finalCorrect">0 / 12</strong></div>
+          <div class="result-item"><span>오답</span><strong id="finalWrong">0</strong></div>
+          <div class="result-item"><span>놓침</span><strong id="finalMiss">0</strong></div>
+          <div class="result-item"><span>평균 반응</span><strong id="finalAverage">--</strong></div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="sidebar" aria-labelledby="gameTitle">
+      <p id="difficultySpec" class="sr-only" aria-live="off"></p>
+      <p class="eyebrow">CMD ALERT · REACTION GAME</p>
+      <h1 id="gameTitle">오류 로그를 찾아<br>빠르게 대응하세요.</h1>
+      <p class="description">4개의 CMD에서 장애 로그를 찾아 처리하는 30초 반응속도 게임입니다.</p>
+      <section id="introPanel" aria-labelledby="rulesTitle">
+        <h2 id="rulesTitle" class="section-heading">게임 규칙</h2>
+        <ol class="rules">
+          <li><span class="rule-num" aria-hidden="true">1</span><div><span class="rule-title">빨간 오류를 선택</span><span class="rule-desc"><strong class="level-error">ERROR · FATAL · CRITICAL</strong>이 보이는 창을 클릭하거나 <strong>1~4</strong> 키를 누릅니다.</span></div></li>
+          <li><span class="rule-num" aria-hidden="true">2</span><div><span class="rule-title">WARN은 누르지 않기</span><span class="rule-desc"><strong class="level-warn">WARN</strong>은 방해 로그입니다. 오류는 <strong>1~4개</strong> 동시 등장합니다.</span></div></li>
+          <li><span class="rule-num" aria-hidden="true">3</span><div><span class="rule-title">30초 · 총 12개 오류</span><span class="rule-desc">빨리 처리할수록 높은 점수. 정답당 최대 100점, 전체 <strong>1200점</strong>입니다.</span></div></li>
+        </ol>
+        <h2 class="section-heading" style="margin-top:11px">성공 조건</h2>
+        <div class="win-criteria">
+          <div class="win-item"><strong>10개 이상</strong><span>정답 CORRECT</span></div>
+          <div class="win-item"><strong>2개 이하</strong><span>잘못 선택 WRONG</span></div>
+          <div class="win-item"><strong>1개 이하</strong><span>시간 초과 MISS</span></div>
+          <div class="win-item"><strong>850ms 이하</strong><span>정답 평균 반응</span></div>
+        </div>
+        <p class="win-caption">네 가지 조건을 모두 만족하면 성공합니다.</p>
+        <p id="audioStatus" class="audio-status" role="status" aria-live="polite">효과음 OFF · 게임 소리가 꺼져 있습니다.</p>
+      </section>
+
+    </aside>
+
+    <div id="pauseOverlay" class="pause-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+      <div class="pause-dialog">
+        <h2 id="pauseTitle">GAME PAUSED</h2>
+        <p id="pauseReason">게임이 일시정지되었습니다.</p>
+        <div class="pause-actions">
+          <button id="resumeButton" class="button" type="button">RESUME</button>
+          <button id="confirmStopButton" class="button secondary hidden" type="button">종료 확정</button>
+        </div>
+      </div>
+    </div>
+    <p id="liveResult" class="sr-only" aria-live="polite"></p>
+    <strong id="difficultyHeader" class="sr-only">LV.5</strong>
+  </section>
+
+  <section class="experiment-section" aria-labelledby="experimentTitle">
+    <header class="experiment-header"><div><h2 id="experimentTitle">난이도 테스트 기록</h2><p>완료한 판과 선택 난이도는 이 브라우저에 저장됩니다. 진행 중 게임은 새로고침 시 초기화됩니다.</p></div><div class="experiment-progress"><span>CURRENT LEVEL</span><strong id="levelProgress">LV.5 · 0 / 10</strong></div></header>
+    <div id="emptyRecord" class="empty-record">완료한 게임 기록이 없습니다.</div>
+    <div id="recordWrap" class="table-wrap hidden"><table><thead><tr><th>RUN</th><th>LV</th><th>SCORE</th><th>ACC</th><th>AVG</th><th>CORRECT</th><th>WRONG</th><th>MISS</th><th>RESULT</th><th>FAIL CAUSE</th></tr></thead><tbody id="recordBody"></tbody></table></div>
+    <section id="summarySection" class="summary-section hidden"><h3>난이도별 요약</h3><div class="table-wrap"><table><thead><tr><th>LEVEL</th><th>RUNS</th><th>MEDIAN SCORE</th><th>MEDIAN ACC</th><th>MEDIAN AVG</th><th>MEDIAN WRONG</th><th>MEDIAN MISS</th><th>SUCCESS RATE</th></tr></thead><tbody id="summaryBody"></tbody></table></div><p id="summaryNote" class="summary-note"></p></section>
+    <div class="storage-controls"><p id="storageStatus" class="storage-status" role="status" aria-live="polite">저장 상태를 확인하고 있습니다.</p><button id="clearStorageButton" class="button secondary" type="button">저장 데이터 초기화</button></div>
+    <p class="privacy-note">개인정보를 입력받지 않습니다. 게임 결과와 효과 설정은 이 브라우저에만 저장되며 서버로 전송하지 않습니다.</p>
+  </section>
+</main>
+<script>
+    (() => {
+      "use strict";
+
+      // 게임 전체에서 변하지 않는 규칙
+      const GAME_DURATION_MS = 30_000;
+      const TOTAL_ALERTS = 12;
+      const MAX_ALERT_SCORE = 100;
+      const MAX_ROUND_SCORE = TOTAL_ALERTS * MAX_ALERT_SCORE;
+      const SCORE_BASE_MS = 1800;
+      const SUCCESS_CORRECT = 10;
+      const SUCCESS_MAX_WRONG = 2;
+      const SUCCESS_MAX_MISS = 1;
+      const SUCCESS_MAX_AVG_MS = 850;
+      const MAX_LOG_LINES = 8;
+      const RUNS_TARGET = 10;
+      const STREAM_BASE_INTERVALS = [480, 560, 640, 720];
+      const STREAM_JITTER_MS = 75;
+      const SCHEDULE_START_MS = 1800;
+      const SCHEDULE_END_MARGIN_MS = 600;
+      const DEFAULT_DIFFICULTY_LEVEL = 5;
+
+      // groups: 한 판(총 12개 오류)의 동시 출현 묶음. 순서와 CMD는 매 판 섞인다.
+      const DIFFICULTY_PRESETS = {
+        1:  { logSpeed: 1.15, warnRate: 0.05, responseWindow: 1800, groups: [1,1,1,1,1,1,1,1,1,1,1,1] },
+        2:  { logSpeed: 1.10, warnRate: 0.08, responseWindow: 1750, groups: [1,1,1,1,1,1,1,1,1,1,2] },
+        3:  { logSpeed: 1.00, warnRate: 0.10, responseWindow: 1700, groups: [1,1,1,1,1,1,1,1,2,2] },
+        4:  { logSpeed: 0.94, warnRate: 0.13, responseWindow: 1650, groups: [1,1,1,1,1,1,2,2,2] },
+        5:  { logSpeed: 0.88, warnRate: 0.16, responseWindow: 1600, groups: [1,1,2,2,2,2,2] },
+        6:  { logSpeed: 0.82, warnRate: 0.20, responseWindow: 1500, groups: [1,1,1,2,2,2,3] },
+        7:  { logSpeed: 0.76, warnRate: 0.24, responseWindow: 1400, groups: [1,1,1,2,3,4] },
+        8:  { logSpeed: 0.70, warnRate: 0.28, responseWindow: 1300, groups: [1,2,2,3,4] },
+        9:  { logSpeed: 0.64, warnRate: 0.32, responseWindow: 1200, groups: [2,3,3,4] },
+        10: { logSpeed: 0.58, warnRate: 0.36, responseWindow: 1100, groups: [1,3,4,4] }
+      };
+
+      const NORMAL_MESSAGES = [
+        "request completed", "worker ready", "connection established", "heartbeat ok",
+        "cache loaded", "query completed", "health check passed", "session validated",
+        "sync completed", "status 200", "job scheduled", "response sent"
+      ];
+      const WARN_MESSAGES = [
+        "response delayed", "retry scheduled", "queue depth increased",
+        "cache miss detected", "connection latency high", "worker load elevated"
+      ];
+      const ERROR_MESSAGES = [
+        { level: "ERROR", text: "connection timeout" },
+        { level: "ERROR", text: "request failed" },
+        { level: "FATAL", text: "worker stopped" },
+        { level: "CRITICAL", text: "service unavailable" },
+        { level: "ERROR", text: "database unavailable" },
+        { level: "CRITICAL", text: "memory threshold exceeded" }
+      ];
+
+      const $ = id => document.getElementById(id);
+      const terminals = [...document.querySelectorAll(".terminal")];
+      const logLists = [...document.querySelectorAll("[data-log-list]")];
+      const ui = {
+        status: $("statusText"), level: $("difficultyHeader"), select: $("difficultySelect"),
+        spec: $("difficultySpec"), time: $("timeText"), score: $("scoreText"),
+        accuracy: $("accuracyText"), reaction: $("reactionText"),
+        intro: $("introPanel"), result: $("resultPanel"), resultTitle: $("resultTitle"),
+        resultSummary: $("resultSummary"), finalScore: $("finalScore"),
+        finalCorrect: $("finalCorrect"), finalWrong: $("finalWrong"),
+        finalMiss: $("finalMiss"), finalAverage: $("finalAverage"),
+        message: $("messageText"), feedback: $("feedbackText"),
+        start: $("startButton"), pause: $("pauseButton"),
+        overlay: $("pauseOverlay"), pauseReason: $("pauseReason"), pauseTitle: $("pauseTitle"), resume: $("resumeButton"), confirmStop: $("confirmStopButton"),
+        live: $("liveResult"), progress: $("levelProgress"),
+        empty: $("emptyRecord"), recordWrap: $("recordWrap"), recordBody: $("recordBody"),
+        summary: $("summarySection"), summaryBody: $("summaryBody"), summaryNote: $("summaryNote"),
+        storageStatus: $("storageStatus"), clearStorage: $("clearStorageButton"),
+        soundToggle: $("soundToggle"),
+        audioStatus: $("audioStatus"), motionToggle: $("motionToggle")
+      };
+
+      let state = "READY";
+      let selectedLevel = DEFAULT_DIFFICULTY_LEVEL;
+      let roundLevel = selectedLevel;
+      let config = { ...DIFFICULTY_PRESETS[selectedLevel] };
+      let score = 0, correct = 0, wrong = 0, miss = 0;
+      let reactionTimes = [];
+      let elapsedMs = 0, lastFrameAt = null, frameId = null;
+      let streamCountdowns = [0, 0, 0, 0];
+      let activeAlerts = [null, null, null, null];
+      let schedule = [], scheduleIndex = 0;
+      const experimentRecords = [];
+
+      // 카드 4: 완료된 결과와 선택 난이도만 저장. 현재 판 상태는 저장하지 않는다.
+      const STORAGE_KEY = "cmd-alert-state-v1";
+      const STORAGE_VERSION = 1;
+      const MAX_STORED_RECORDS = 1000;
+      let storageAvailable = true;
+
+      // 카드 5: 게임 기록 스키마를 변경하지 않는 별도 설정 저장소.
+      const PREFERENCES_KEY = "cmd-alert-preferences-v1";
+      const PREFERENCES_VERSION = 1;
+      const systemReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const preferences = { soundEnabled: false, reduceMotion: false };
+      let audioContext = null;
+      let lastCueAt = -Infinity;
+
+      function renderPreferences() {
+        ui.soundToggle.setAttribute("aria-pressed", String(preferences.soundEnabled));
+        ui.soundToggle.textContent = preferences.soundEnabled ? "효과음 ON" : "효과음 OFF";
+        ui.motionToggle.setAttribute("aria-pressed", String(preferences.reduceMotion));
+        ui.motionToggle.textContent = preferences.reduceMotion ? "움직임 줄이기 켜짐" : "움직임 줄이기 꺼짐";
+        document.documentElement.classList.toggle("reduce-motion", preferences.reduceMotion);
+      }
+
+      function restorePreferences() {
+        try {
+          const raw = localStorage.getItem(PREFERENCES_KEY);
+          if (raw !== null) {
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+                parsed.version !== PREFERENCES_VERSION ||
+                typeof parsed.soundEnabled !== "boolean" ||
+                typeof parsed.reduceMotion !== "boolean") {
+              throw new Error("효과 설정 데이터 구조가 올바르지 않습니다.");
+            }
+            preferences.soundEnabled = parsed.soundEnabled;
+            preferences.reduceMotion = parsed.reduceMotion;
+          }
+        } catch (error) {
+          // 효과 설정이 손상되어도 게임 기록에는 영향을 주지 않는다.
+          preferences.soundEnabled = false;
+          preferences.reduceMotion = false;
+          try { localStorage.removeItem(PREFERENCES_KEY); } catch (ignored) { /* 저장소 미지원 */ }
+        }
+        renderPreferences();
+      }
+
+      function savePreferences() {
+        try {
+          localStorage.setItem(PREFERENCES_KEY, JSON.stringify({
+            version: PREFERENCES_VERSION,
+            soundEnabled: preferences.soundEnabled,
+            reduceMotion: preferences.reduceMotion
+          }));
+          return true;
+        } catch (error) {
+          return false;
+        }
+      }
+
+      // file://에서도 외부 음원 없이 동작하는 단일 Web Audio 엔진.
+      // 확인음/정답/오답은 들리기 쉬운 triangle 파형을 사용한다.
+      // 실제 재생은 사용자의 클릭(효과음 ON, START)에서 활성화한다.
+      function setAudioStatus(message, tone = "") {
+        ui.audioStatus.textContent = message;
+        ui.audioStatus.className = tone ? `audio-status ${tone}` : "audio-status";
+      }
+
+      function getAudioContext() {
+        const Type = window.AudioContext || window.webkitAudioContext;
+        if (!Type) {
+          setAudioStatus("Web Audio를 지원하지 않는 브라우저입니다.", "warning");
+          return null;
+        }
+        try {
+          if (!audioContext || audioContext.state === "closed") {
+            audioContext = new Type();
+          }
+          return audioContext;
+        } catch (error) {
+          setAudioStatus("소리 장치를 시작할 수 없습니다.", "warning");
+          return null;
+        }
+      }
+
+      async function unlockAudio() {
+        const context = getAudioContext();
+        if (!context) return false;
+        try {
+          if (context.state === "suspended") await context.resume();
+          if (context.state !== "running") {
+            setAudioStatus("오디오 재생이 차단되었습니다. 효과음을 OFF 후 다시 ON 해보세요.", "warning");
+            return false;
+          }
+          return true;
+        } catch (error) {
+          setAudioStatus("브라우저에서 오디오가 차단되었습니다.", "warning");
+          return false;
+        }
+      }
+
+      // 모든 알림에서 동일한 음량/음색을 사용하고 주파수 변화로 구별한다.
+      // 기존 테스트음(760 Hz sine)은 사용자 환경에서 들리지 않았으므로 교체.
+      const SOUND_SHAPES = {
+        test:    [[350, 510, .32, 0], [510, 660, .26, .13]],
+        correct: [[420, 640, .24, 0]],
+        wrong:   [[270, 190, .29, 0]],
+        miss:    [[360, 240, .30, 0]],
+        success: [[440, 600, .28, 0], [600, 790, .31, .17]],
+        failed:  [[300, 210, .29, 0], [235, 175, .28, .18]]
+      };
+
+      function emitTone(kind) {
+        const context = audioContext;
+        if (!context || context.state !== "running") return false;
+        const parts = SOUND_SHAPES[kind];
+        if (!parts) return false;
+        try {
+          const start = context.currentTime + .008;
+          for (const [from, to, duration, delay] of parts) {
+            const osc = context.createOscillator();
+            const volume = context.createGain();
+            const at = start + delay;
+            osc.type = "triangle";
+            osc.frequency.setValueAtTime(from, at);
+            osc.frequency.exponentialRampToValueAtTime(to, at + duration * .82);
+            volume.gain.setValueAtTime(.0001, at);
+            volume.gain.linearRampToValueAtTime(.15, at + .035);
+            volume.gain.setValueAtTime(.15, at + duration * .45);
+            volume.gain.exponentialRampToValueAtTime(.0001, at + duration);
+            osc.connect(volume);
+            volume.connect(context.destination);
+            osc.start(at);
+            osc.stop(at + duration + .025);
+            osc.addEventListener("ended", () => {
+              osc.disconnect();
+              volume.disconnect();
+            }, { once: true });
+          }
+          return true;
+        } catch (error) {
+          setAudioStatus("소리 생성 중 오류가 발생했습니다.", "warning");
+          return false;
+        }
+      }
+
+      async function playEnableSound() {
+        // 효과음 ON 클릭으로 AudioContext를 시작하고 1회 확인음을 재생한다.
+        if (!preferences.soundEnabled) return;
+        if (await unlockAudio() && preferences.soundEnabled) {
+          const emitted = emitTone("test");
+          setAudioStatus(
+            emitted ? "효과음 ON · 정답·오답·MISS 때 소리가 납니다."
+                    : "효과음을 재생하지 못했습니다. 브라우저의 소리 설정을 확인하세요.",
+            emitted ? "success" : "warning"
+          );
+        }
+      }
+
+      function playCue(kind) {
+        if (!preferences.soundEnabled || document.hidden || state === "PAUSED") return;
+        const realNow = performance.now();
+        if (kind === "miss" && realNow - lastCueAt < 140) return;
+        lastCueAt = realNow;
+        if (audioContext?.state === "running") {
+          emitTone(kind);
+        } else {
+          void unlockAudio().then(ready => {
+            if (ready && preferences.soundEnabled) emitTone(kind);
+          });
+        }
+      }
+
+      function pulseTerminal(index, kind) {
+        if (preferences.reduceMotion || systemReducedMotion.matches) return;
+        const terminal = terminals[index];
+        if (!terminal) return;
+        terminal.classList.remove("fx-correct", "fx-wrong", "fx-miss");
+        // 같은 터미널을 연속 입력해도 효과가 재생되도록 한다.
+        void terminal.offsetWidth;
+        terminal.classList.add(`fx-${kind}`);
+      }
+
+      function setStorageStatus(message, tone = "") {
+        ui.storageStatus.textContent = message;
+        ui.storageStatus.className = tone ? `storage-status ${tone}` : "storage-status";
+      }
+
+      function recordFailureCause(row) {
+        const causes = [];
+        if (row.correct < SUCCESS_CORRECT) causes.push("정답 부족");
+        if (row.wrong > SUCCESS_MAX_WRONG) causes.push("WRONG 초과");
+        if (row.miss > SUCCESS_MAX_MISS) causes.push("MISS 초과");
+        if (row.average === null) causes.push("반응 기록 없음");
+        else if (row.average > SUCCESS_MAX_AVG_MS) causes.push("평균 반응 느림");
+        return causes.join(" · ") || "-";
+      }
+
+      function isSuccessfulRecord(row) {
+        return row.correct >= SUCCESS_CORRECT && row.wrong <= SUCCESS_MAX_WRONG &&
+          row.miss <= SUCCESS_MAX_MISS && row.average !== null &&
+          row.average <= SUCCESS_MAX_AVG_MS;
+      }
+
+      // 검증을 통과한 데이터만 UI에 복구한다. 저장 문자열을 HTML로 삽입하지 않는다.
+      function validateStoredRecord(row, index) {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+        const integer = (value, low, high) => Number.isInteger(value) && value >= low && value <= high;
+        if (!integer(row.run, 1, MAX_STORED_RECORDS) || row.run !== index + 1 ||
+            !integer(row.level, 1, 10) || !integer(row.score, 0, MAX_ROUND_SCORE) ||
+            !integer(row.correct, 0, TOTAL_ALERTS) || !integer(row.miss, 0, TOTAL_ALERTS) ||
+            !integer(row.wrong, 0, 100000) || row.correct + row.miss !== TOTAL_ALERTS ||
+            row.score > row.correct * MAX_ALERT_SCORE) return null;
+        if (row.average !== null && !integer(row.average, 0, SCORE_BASE_MS)) return null;
+        if ((row.correct === 0) !== (row.average === null)) return null;
+        const totalJudgments = row.correct + row.wrong + row.miss;
+        const computedAccuracy = totalJudgments ? row.correct / totalJudgments * 100 : 0;
+        if (typeof row.accuracy !== "number" || !Number.isFinite(row.accuracy) ||
+            Math.abs(row.accuracy - computedAccuracy) > 0.00001) return null;
+        const clean = {
+          run: index + 1, level: row.level, score: row.score,
+          accuracy: computedAccuracy, average: row.average,
+          correct: row.correct, wrong: row.wrong, miss: row.miss
+        };
+        clean.result = isSuccessfulRecord(clean) ? "SUCCESS" : "FAILED";
+        clean.failureCause = clean.result === "SUCCESS" ? "-" : recordFailureCause(clean);
+        if (row.result !== clean.result || row.failureCause !== clean.failureCause) return null;
+        return clean;
+      }
+
+      function restoreSavedState() {
+        let raw;
+        try {
+          raw = localStorage.getItem(STORAGE_KEY);
+        } catch (error) {
+          storageAvailable = false;
+          setStorageStatus("브라우저 저장소에 접근할 수 없습니다. 결과는 현재 페이지에서만 유지됩니다.", "warning");
+          return;
+        }
+        if (raw === null) {
+          setStorageStatus("저장된 기록이 없습니다. 첫 판을 완료하면 자동 저장됩니다.");
+          return;
+        }
+        try {
+          const data = JSON.parse(raw);
+          if (!data || typeof data !== "object" || Array.isArray(data) ||
+              data.version !== STORAGE_VERSION ||
+              !Number.isInteger(data.selectedLevel) || data.selectedLevel < 1 || data.selectedLevel > 10 ||
+              !Array.isArray(data.records) || data.records.length > MAX_STORED_RECORDS) {
+            throw new Error("저장 데이터의 구조가 올바르지 않습니다.");
+          }
+          const restored = data.records.map(validateStoredRecord);
+          if (restored.some(row => row === null)) throw new Error("기록 데이터가 올바르지 않습니다.");
+          selectedLevel = data.selectedLevel;
+          experimentRecords.push(...restored);
+          setStorageStatus(`저장된 ${restored.length}판의 기록과 LV.${selectedLevel} 설정을 복구했습니다.`, "success");
+        } catch (error) {
+          selectedLevel = DEFAULT_DIFFICULTY_LEVEL;
+          experimentRecords.length = 0;
+          try { localStorage.removeItem(STORAGE_KEY); }
+          catch (storageError) { storageAvailable = false; }
+          setStorageStatus("손상되었거나 호환되지 않는 저장 데이터를 감지해 기본 상태로 복구했습니다.", "warning");
+        }
+      }
+
+      function savePersistentState() {
+        if (!storageAvailable) {
+          setStorageStatus("자동 저장을 사용할 수 없습니다. 이 페이지를 닫으면 기록이 사라집니다.", "warning");
+          return false;
+        }
+        if (experimentRecords.length > MAX_STORED_RECORDS) {
+          setStorageStatus("저장 가능 기록 수를 초과했습니다. 기록을 별도로 보관한 뒤 초기화하세요.", "warning");
+          return false;
+        }
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            version: STORAGE_VERSION,
+            selectedLevel,
+            records: experimentRecords
+          }));
+          setStorageStatus(`${experimentRecords.length}판의 기록과 LV.${selectedLevel} 설정을 이 브라우저에 저장했습니다.`, "success");
+          return true;
+        } catch (error) {
+          setStorageStatus("저장에 실패했습니다. 브라우저 저장 공간이나 사이트 권한을 확인하세요.", "warning");
+          return false;
+        }
+      }
+
+      function clearSavedState() {
+        if (state === "PLAYING" || state === "PAUSED") return;
+        if (!window.confirm("완료된 게임 기록과 선택 난이도를 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+        experimentRecords.length = 0;
+        selectedLevel = DEFAULT_DIFFICULTY_LEVEL;
+        // 결과 초기화는 게임 기록만 지운다. 사용자가 선택한 효과 설정은 유지한다.
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          setStorageStatus("저장 기록을 초기화했습니다. 기본 난이도 LV.5로 돌아왔습니다.");
+        } catch (error) {
+          storageAvailable = false;
+          setStorageStatus("화면의 기록은 초기화했지만 브라우저 저장소 제거에는 실패했습니다.", "warning");
+        }
+        renderRecords();
+        renderSummary();
+        renderDifficulty();
+        ui.message.textContent = "저장 데이터를 초기화했습니다. 새 게임을 시작할 수 있습니다.";
+      }
+
+      function randomItem(items) { return items[Math.floor(Math.random() * items.length)]; }
+      function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+      function shuffle(items) {
+        const result = [...items];
+        for (let i = result.length - 1; i > 0; i--) {
+          const j = randomInt(0, i);
+          [result[i], result[j]] = [result[j], result[i]];
+        }
+        return result;
+      }
+      function median(values) {
+        if (!values.length) return null;
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      }
+      function timestamp() {
+        const date = new Date();
+        return date.toLocaleTimeString("en-GB", { hour12: false }) + "." +
+          String(date.getMilliseconds()).padStart(3, "0");
+      }
+      function setState(next) { state = next; ui.status.textContent = next; }
+      function levelRecords(level) { return experimentRecords.filter(r => r.level === level); }
+      function averageResponse() {
+        if (!reactionTimes.length) return null;
+        return Math.round(reactionTimes.reduce((sum, ms) => sum + ms, 0) / reactionTimes.length);
+      }
+      function accuracy() {
+        const total = correct + wrong + miss;
+        return total ? correct / total * 100 : null;
+      }
+      function updateMetrics() {
+        ui.time.textContent = ((GAME_DURATION_MS - Math.min(elapsedMs, GAME_DURATION_MS)) / 1000).toFixed(1);
+        ui.score.textContent = `${score} / ${MAX_ROUND_SCORE}`;
+        const acc = accuracy();
+        ui.accuracy.textContent = acc === null ? "--" : `${acc.toFixed(0)}%`;
+      }
+      function feedback(text, type = "") {
+        ui.feedback.textContent = text;
+        ui.feedback.className = type ? `feedback ${type}` : "feedback";
+      }
+      function setTerminalEnabled(enabled) {
+        terminals.forEach(terminal => { terminal.disabled = !enabled; });
+      }
+
+      // 모든 난이도에서 총 12개, 각 그룹은 1~4개인지 검사한다.
+      function validatePresets() {
+        for (const [level, preset] of Object.entries(DIFFICULTY_PRESETS)) {
+          const count = preset.groups.reduce((sum, n) => sum + n, 0);
+          if (count !== TOTAL_ALERTS || preset.groups.some(n => !Number.isInteger(n) || n < 1 || n > 4)) {
+            throw new Error(`LV.${level}: 오류 그룹 설정이 잘못되었습니다.`);
+          }
+          const latest = GAME_DURATION_MS - preset.responseWindow - SCHEDULE_END_MARGIN_MS;
+          const gap = (latest - SCHEDULE_START_MS) / Math.max(1, preset.groups.length - 1);
+          if (preset.groups.length > 1 && gap <= preset.responseWindow) {
+            throw new Error(`LV.${level}: 오류 발생 간격이 반응 제한시간보다 짧습니다.`);
+          }
+        }
+      }
+      function makeSchedule(preset) {
+        const groups = shuffle(preset.groups);
+        const finalTime = GAME_DURATION_MS - preset.responseWindow - SCHEDULE_END_MARGIN_MS;
+        const gap = groups.length > 1 ? (finalTime - SCHEDULE_START_MS) / (groups.length - 1) : 0;
+        return groups.map((count, i) => ({ timeMs: SCHEDULE_START_MS + gap * i, count }));
+      }
+
+      function createLogLine(level, message) {
+        const line = document.createElement("li");
+        line.className = "log-line";
+        const time = document.createElement("span");
+        time.className = "log-time";
+        time.textContent = timestamp();
+        const label = document.createElement("span");
+        label.className = `log-level level-${level.toLowerCase()}`;
+        label.textContent = ` [${level}] `;
+        line.append(time, label, document.createTextNode(message));
+        return line;
+      }
+      function appendLog(index, level, message) {
+        const list = logLists[index];
+        const line = createLogLine(level, message);
+        list.appendChild(line);
+        while (list.children.length > MAX_LOG_LINES) list.firstElementChild.remove();
+        return line;
+      }
+      function fillInitialLogs() {
+        logLists.forEach((list, index) => {
+          list.replaceChildren();
+          for (let i = 0; i < MAX_LOG_LINES; i++) {
+            appendLog(index, "INFO", randomItem(NORMAL_MESSAGES));
+          }
+        });
+      }
+      function nextStreamDelay(index) {
+        const base = STREAM_BASE_INTERVALS[index] * config.logSpeed;
+        return Math.max(180, base + randomInt(-STREAM_JITTER_MS, STREAM_JITTER_MS));
+      }
+      function updateStreams(delta) {
+        for (let i = 0; i < 4; i++) {
+          streamCountdowns[i] -= delta;
+          while (streamCountdowns[i] <= 0) {
+            const warn = Math.random() < config.warnRate;
+            appendLog(i, warn ? "WARN" : "INFO", randomItem(warn ? WARN_MESSAGES : NORMAL_MESSAGES));
+            streamCountdowns[i] += nextStreamDelay(i);
+          }
+        }
+      }
+
+      // 한 오류는 한 터미널에서만 활성화된다.
+      // 이미 살아 있는 오류를 새 그룹이 덮어쓰지 않도록 비어 있는 터미널만 선택한다.
+      function spawnGroup(count) {
+        const available = shuffle([0, 1, 2, 3].filter(i => activeAlerts[i] === null));
+        if (available.length < count) return false;
+        for (const index of available.slice(0, count)) {
+          const data = randomItem(ERROR_MESSAGES);
+          const line = appendLog(index, data.level, data.text);
+          activeAlerts[index] = { line, appearedAtMs: elapsedMs };
+        }
+        // 동시 오류 개수를 직접 알려주지 않는다.
+        ui.message.textContent = "로그를 감시하고 발생한 오류를 모두 처리하세요.";
+        ui.live.textContent = "새 오류가 발생했습니다.";
+        return true;
+      }
+      function processSchedule() {
+        while (scheduleIndex < schedule.length && elapsedMs >= schedule[scheduleIndex].timeMs) {
+          if (!spawnGroup(schedule[scheduleIndex].count)) break;
+          scheduleIndex++;
+        }
+      }
+      function resolveAlert(index) {
+        const alert = activeAlerts[index];
+        if (!alert) return;
+        if (alert.line.isConnected) alert.line.classList.add("handled-error");
+        activeAlerts[index] = null;
+      }
+      function markMiss(index) {
+        if (!activeAlerts[index]) return;
+        miss++;
+        pulseTerminal(index, "miss");
+        playCue("miss");
+        ui.reaction.textContent = "MISS";
+        feedback("MISS · 0점", "miss");
+        resolveAlert(index);
+      }
+      function expireAlerts(currentTime) {
+        activeAlerts.forEach((alert, index) => {
+          if (alert && currentTime - alert.appearedAtMs >= config.responseWindow) {
+            markMiss(index);
+          }
+        });
+      }
+      function gameTimeNow() {
+        return state === "PLAYING" && lastFrameAt !== null
+          ? elapsedMs + Math.max(0, Math.min(100, performance.now() - lastFrameAt))
+          : elapsedMs;
+      }
+      function reactionPoints(ms) {
+        const ratio = Math.max(0, SCORE_BASE_MS - ms) / SCORE_BASE_MS;
+        return Math.max(1, Math.min(MAX_ALERT_SCORE, Math.round(MAX_ALERT_SCORE * ratio)));
+      }
+      function chooseTerminal(index) {
+        if (state !== "PLAYING") return;
+        const now = gameTimeNow();
+        const wasActive = activeAlerts[index] !== null;
+        expireAlerts(now);
+        const alert = activeAlerts[index];
+        if (!alert) {
+          // 방금 만료된 오류는 MISS만 기록하고 WRONG으로 중복 집계하지 않는다.
+          if (wasActive) { updateMetrics(); return; }
+          wrong++;
+          pulseTerminal(index, "wrong");
+          playCue("wrong");
+          feedback("WRONG · 0점", "wrong");
+          ui.reaction.textContent = "--";
+          ui.message.textContent = "이 터미널에는 처리할 오류가 없습니다.";
+          ui.live.textContent = "잘못된 터미널입니다.";
+        } else {
+          const reactionMs = Math.round(Math.max(0, now - alert.appearedAtMs));
+          const gained = reactionPoints(reactionMs);
+          correct++;
+          pulseTerminal(index, "correct");
+          playCue("correct");
+          score += gained;
+          reactionTimes.push(reactionMs);
+          ui.reaction.textContent = `${reactionMs}ms`;
+          feedback(`CORRECT · ${reactionMs}ms · +${gained}`);
+          ui.message.textContent = "대응 완료. 다른 터미널의 오류도 확인하세요.";
+          ui.live.textContent = `정답. ${reactionMs}밀리초, ${gained}점.`;
+          resolveAlert(index);
+        }
+        updateMetrics();
+      }
+
+      function gameLoop(now) {
+        if (state !== "PLAYING") return;
+        const delta = Math.max(0, Math.min(100, now - lastFrameAt));
+        lastFrameAt = now;
+        elapsedMs = Math.min(GAME_DURATION_MS, elapsedMs + delta);
+        updateStreams(delta);
+        expireAlerts(elapsedMs);
+        processSchedule();
+        updateMetrics();
+        if (elapsedMs >= GAME_DURATION_MS) { endGame(); return; }
+        frameId = requestAnimationFrame(gameLoop);
+      }
+      function pauseGame(reason = "manual") {
+        if (state !== "PLAYING") return;
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = null;
+        elapsedMs = Math.min(GAME_DURATION_MS, gameTimeNow());
+        lastFrameAt = null;
+        expireAlerts(elapsedMs);
+        setState("PAUSED");
+        setTerminalEnabled(false);
+        ui.pause.classList.add("hidden");
+        const isStopPrompt = reason === "stop";
+        ui.pauseTitle.textContent = isStopPrompt ? "게임을 종료할까요?" : "GAME PAUSED";
+        ui.pauseReason.textContent = isStopPrompt
+          ? "현재 진행 중인 판은 기록에 추가되지 않습니다. 이전에 완료한 기록은 유지됩니다."
+          : reason === "focus"
+            ? "다른 창으로 이동해 일시정지했습니다. 돌아온 후 RESUME을 누르세요."
+            : "게임 시간·로그 출력·오류 제한시간이 모두 멈췄습니다.";
+        ui.resume.textContent = isStopPrompt ? "계속하기" : "RESUME";
+        ui.confirmStop.classList.toggle("hidden", !isStopPrompt);
+        ui.overlay.classList.remove("hidden");
+        updateMetrics();
+        if (isStopPrompt) ui.confirmStop.focus();
+        else if (reason === "manual") ui.resume.focus();
+      }
+      function resumeGame() {
+        if (state !== "PAUSED") return;
+        ui.overlay.classList.add("hidden");
+        ui.confirmStop.classList.add("hidden");
+        ui.resume.textContent = "RESUME";
+        ui.pause.classList.remove("hidden");
+        setTerminalEnabled(true);
+        setState("PLAYING");
+        lastFrameAt = performance.now();
+        frameId = requestAnimationFrame(gameLoop);
+      }
+      // 사용자가 중단한 판은 완료 기록/성공률/저장 데이터에 포함하지 않는다.
+      function stopGame() {
+        if (state !== "PAUSED" || ui.confirmStop.classList.contains("hidden")) return;
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = null;
+        lastFrameAt = null;
+        activeAlerts = [null, null, null, null];
+        schedule = [];
+        scheduleIndex = 0;
+        elapsedMs = 0;
+        score = correct = wrong = miss = 0;
+        reactionTimes = [];
+        fillInitialLogs();
+        ui.overlay.classList.add("hidden");
+        ui.confirmStop.classList.add("hidden");
+        ui.resume.textContent = "RESUME";
+        ui.result.classList.add("hidden");
+        ui.pause.classList.add("hidden");
+        ui.start.disabled = false;
+        ui.start.textContent = "다시 시작";
+        ui.start.classList.remove("stop-action");
+        ui.select.disabled = false;
+        ui.clearStorage.disabled = false;
+        setTerminalEnabled(false);
+        ui.reaction.textContent = "--";
+        feedback("");
+        updateMetrics();
+        setState("STOPPED");
+        ui.message.textContent = "게임을 종료했습니다. 중단한 판은 기록에 포함하지 않았습니다.";
+        ui.live.textContent = "게임이 종료되었습니다. 이번 판의 기록은 저장되지 않았습니다.";
+        ui.start.focus();
+      }
+
+      function resetRound() {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = null;
+        roundLevel = selectedLevel;
+        config = { ...DIFFICULTY_PRESETS[roundLevel] };
+        score = correct = wrong = miss = 0;
+        reactionTimes = [];
+        elapsedMs = 0;
+        lastFrameAt = null;
+        activeAlerts = [null, null, null, null];
+        schedule = makeSchedule(config);
+        scheduleIndex = 0;
+        streamCountdowns = STREAM_BASE_INTERVALS.map((_, i) => nextStreamDelay(i));
+        fillInitialLogs();
+        ui.reaction.textContent = "--";
+        feedback("");
+        // 규칙 영역을 숨기지 않는다. 게임판 좌표가 바뀌지 않도록 유지한다.
+        ui.result.classList.add("hidden");
+        ui.overlay.classList.add("hidden");
+        ui.start.disabled = false;
+        ui.start.textContent = "종료";
+        ui.start.classList.add("stop-action");
+        ui.pause.classList.remove("hidden");
+        ui.select.disabled = true;
+        ui.clearStorage.disabled = true;
+        setTerminalEnabled(true);
+        updateMetrics();
+      }
+      function startGame() {
+        // START 클릭은 사용자 제스처이므로 파일로 실행해도 오디오 활성화가 가능하다.
+        if (preferences.soundEnabled) void unlockAudio();
+        resetRound();
+        setState("PLAYING");
+        ui.level.textContent = `LV.${roundLevel}`;
+        ui.message.textContent = "로그를 감시하세요. WARN은 대응 대상이 아닙니다.";
+        lastFrameAt = performance.now();
+        frameId = requestAnimationFrame(gameLoop);
+      }
+      function isSuccess() {
+        const avg = averageResponse();
+        return correct >= SUCCESS_CORRECT && wrong <= SUCCESS_MAX_WRONG &&
+          miss <= SUCCESS_MAX_MISS && avg !== null && avg <= SUCCESS_MAX_AVG_MS;
+      }
+      function failureCause() {
+        const causes = [];
+        if (correct < SUCCESS_CORRECT) causes.push("정답 부족");
+        if (wrong > SUCCESS_MAX_WRONG) causes.push("WRONG 초과");
+        if (miss > SUCCESS_MAX_MISS) causes.push("MISS 초과");
+        const avg = averageResponse();
+        if (avg === null) causes.push("반응 기록 없음");
+        else if (avg > SUCCESS_MAX_AVG_MS) causes.push("평균 반응 느림");
+        return causes.join(" · ") || "-";
+      }
+      function endGame() {
+        if (state !== "PLAYING") return;
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        frameId = null;
+        activeAlerts.forEach((alert, index) => { if (alert) markMiss(index); });
+        elapsedMs = GAME_DURATION_MS;
+        updateMetrics();
+        setTerminalEnabled(false);
+        ui.select.disabled = false;
+        ui.clearStorage.disabled = false;
+        ui.pause.classList.add("hidden");
+        const success = isSuccess();
+        const avg = averageResponse();
+        setState(success ? "SUCCESS" : "FAILED");
+        playCue(success ? "success" : "failed");
+        ui.resultTitle.textContent = success ? "SYSTEM STABLE" : "SYSTEM FAILURE";
+        ui.resultSummary.textContent = success
+          ? `LV.${roundLevel} 성공 · 정확도 ${(accuracy() ?? 0).toFixed(0)}% · 평균 ${avg}ms`
+          : `LV.${roundLevel} 실패 · ${failureCause()}`;
+        ui.finalScore.textContent = `${score} / ${MAX_ROUND_SCORE}`;
+        ui.finalCorrect.textContent = `${correct} / ${TOTAL_ALERTS}`;
+        ui.finalWrong.textContent = String(wrong);
+        ui.finalMiss.textContent = String(miss);
+        ui.finalAverage.textContent = avg === null ? "--" : `${avg}ms`;
+        ui.result.classList.remove("hidden");
+        ui.start.disabled = false;
+        ui.start.textContent = "다음 판";
+        ui.start.classList.remove("stop-action");
+        experimentRecords.push({
+          run: experimentRecords.length + 1,
+          level: roundLevel, score, accuracy: accuracy() ?? 0, average: avg,
+          correct, wrong, miss, result: success ? "SUCCESS" : "FAILED",
+          failureCause: success ? "-" : failureCause()
+        });
+        renderRecords();
+        renderDifficulty();
+        renderSummary();
+        const saved = savePersistentState();
+        ui.message.textContent = saved
+          ? "결과를 저장했습니다. 같은 난이도 또는 다른 난이도로 다음 판을 진행하세요."
+          : "이번 판은 화면에 기록했지만 자동 저장에 실패했습니다. 새로고침하지 마세요.";
+        feedback("");
+        ui.start.focus();
+      }
+
+      function renderDifficulty() {
+        const preset = DIFFICULTY_PRESETS[selectedLevel];
+        ui.level.textContent = `LV.${selectedLevel}`;
+        ui.select.value = String(selectedLevel);
+        const composition = [1, 2, 3, 4]
+          .map(size => ({ size, times: preset.groups.filter(n => n === size).length }))
+          .filter(item => item.times > 0)
+          .map(item => `${item.size}개×${item.times}회`).join(" + ");
+        ui.spec.textContent = `로그 간격 ×${preset.logSpeed.toFixed(2)} · WARN ${Math.round(preset.warnRate * 100)}% · 응답 ${preset.responseWindow}ms · 오류 묶음 ${composition}`;
+        ui.progress.textContent = `LV.${selectedLevel} · ${levelRecords(selectedLevel).length} / ${RUNS_TARGET}`;
+      }
+      function renderRecords() {
+        ui.recordBody.replaceChildren();
+        for (const r of experimentRecords) {
+          const tr = document.createElement("tr");
+          const values = [r.run, `LV.${r.level}`, `${r.score} / ${MAX_ROUND_SCORE}`,
+            `${r.accuracy.toFixed(0)}%`, r.average === null ? "--" : `${r.average}ms`,
+            r.correct, r.wrong, r.miss, r.result, r.failureCause];
+          values.forEach((value, i) => {
+            const td = document.createElement("td");
+            td.textContent = value;
+            if (i === 8) td.className = r.result === "SUCCESS" ? "success" : "failed";
+            tr.appendChild(td);
+          });
+          ui.recordBody.appendChild(tr);
+        }
+        ui.empty.classList.toggle("hidden", experimentRecords.length > 0);
+        ui.recordWrap.classList.toggle("hidden", experimentRecords.length === 0);
+      }
+      function renderSummary() {
+        const levels = [...new Set(experimentRecords.map(r => r.level))].sort((a, b) => a - b);
+        ui.summary.classList.toggle("hidden", levels.length === 0);
+        ui.summaryBody.replaceChildren();
+        for (const level of levels) {
+          const rows = levelRecords(level);
+          const avgValues = rows.map(r => r.average).filter(v => v !== null);
+          const successRate = rows.filter(r => r.result === "SUCCESS").length / rows.length * 100;
+          const values = [
+            `LV.${level}`, rows.length,
+            median(rows.map(r => r.score)).toFixed(0),
+            `${median(rows.map(r => r.accuracy)).toFixed(1)}%`,
+            avgValues.length ? `${median(avgValues).toFixed(0)}ms` : "--",
+            median(rows.map(r => r.wrong)), median(rows.map(r => r.miss)),
+            `${successRate.toFixed(0)}%`
+          ];
+          const tr = document.createElement("tr");
+          values.forEach(value => {
+            const td = document.createElement("td");
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+          ui.summaryBody.appendChild(tr);
+        }
+        const completed = levels.filter(level => levelRecords(level).length >= RUNS_TARGET);
+        const ready = completed.length >= 2;
+        ui.summaryNote.className = ready ? "summary-note ready" : "summary-note";
+        ui.summaryNote.textContent = ready
+          ? `LV.${completed[completed.length - 2]}와 LV.${completed[completed.length - 1]}에서 각각 10회 이상 기록했습니다. 중앙값·성공률·실패 원인을 비교하세요.`
+          : "카드 3 비교를 위해 서로 다른 두 난이도에서 각각 10판 이상 기록하세요.";
+      }
+
+      for (let level = 1; level <= 10; level++) {
+        const option = document.createElement("option");
+        option.value = String(level);
+        option.textContent = `Level ${level}`;
+        ui.select.appendChild(option);
+      }
+      ui.select.addEventListener("change", () => {
+        if (state === "PLAYING" || state === "PAUSED") return;
+        selectedLevel = Number(ui.select.value);
+        renderDifficulty();
+        savePersistentState();
+        ui.message.textContent = `LV.${selectedLevel} 선택 완료. 다음 판부터 적용됩니다.`;
+      });
+      terminals.forEach(terminal => {
+        terminal.addEventListener("click", () => chooseTerminal(Number(terminal.dataset.index)));
+      });
+      document.addEventListener("keydown", event => {
+        if (state !== "PLAYING" || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+        if (/^[1-4]$/.test(event.key)) {
+          event.preventDefault();
+          chooseTerminal(Number(event.key) - 1);
+        }
+      });
+      ui.start.addEventListener("click", () => {
+        if (state === "PLAYING") pauseGame("stop");
+        else if (state !== "PAUSED") startGame();
+      });
+      ui.confirmStop.addEventListener("click", stopGame);
+      ui.pause.addEventListener("click", () => pauseGame("manual"));
+      ui.resume.addEventListener("click", resumeGame);
+      ui.clearStorage.addEventListener("click", clearSavedState);
+      ui.soundToggle.addEventListener("click", () => {
+        preferences.soundEnabled = !preferences.soundEnabled;
+        renderPreferences();
+        savePreferences();
+        if (preferences.soundEnabled) {
+          // 사용자의 직접 클릭에서 오디오 엔진을 열고 확인음을 재생한다.
+          void playEnableSound();
+        } else {
+          setAudioStatus("효과음 OFF · 게임 소리가 꺼져 있습니다.");
+        }
+        ui.live.textContent = preferences.soundEnabled ? "효과음을 켰습니다." : "효과음을 껐습니다.";
+      });
+      ui.motionToggle.addEventListener("click", () => {
+        preferences.reduceMotion = !preferences.reduceMotion;
+        renderPreferences();
+        const saved = savePreferences();
+        ui.live.textContent = preferences.reduceMotion ? "움직임 효과를 줄였습니다." : "움직임 효과를 기본으로 설정했습니다.";
+        if (!saved) ui.live.textContent += " 설정은 새로고침하면 유지되지 않을 수 있습니다.";
+      });
+      terminals.forEach(terminal => {
+        terminal.addEventListener("animationend", () => {
+          terminal.classList.remove("fx-correct", "fx-wrong", "fx-miss");
+        });
+      });
+      window.addEventListener("blur", () => pauseGame("focus"));
+      document.addEventListener("visibilitychange", () => { if (document.hidden) pauseGame("focus"); });
+
+      validatePresets();
+      restoreSavedState();
+      restorePreferences();
+      setAudioStatus(preferences.soundEnabled
+        ? "효과음 ON · 정답·오답·MISS 때 소리가 납니다."
+        : "효과음 OFF · 게임 소리가 꺼져 있습니다.");
+      fillInitialLogs();
+      updateMetrics();
+      renderDifficulty();
+      renderRecords();
+      renderSummary();
+      setState("READY");
+    })();
+</script>
+</body>
+</html>
