@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7fb">
+  <meta name="description" content="이미지와 문구를 안전하게 합성하는 로컬 카드 편집기">
+  <title>짤·카드 스튜디오</title>
+  <style>
+    :root{color-scheme:light;--bg:#f6f7fb;--surface:#fff;--ink:#172136;--muted:#536277;--line:#dbe1ea;--soft:#eef3fa;--accent:#3658d4;--accent-soft:#ebefff;--danger:#a42b3b;--danger-soft:#fff2f2;--good:#176b4c;--good-soft:#eaf8f1;--radius:16px}
+    *{box-sizing:border-box}
+    html{font-family:system-ui,-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;background:var(--bg);color:var(--ink)}
+    body{margin:0;min-width:320px;font-size:15px;line-height:1.5}
+    button,input,textarea{font:inherit}
+    button{cursor:pointer}
+    button:disabled{cursor:not-allowed;opacity:.55}
+    :focus-visible{outline:3px solid #6494f5;outline-offset:3px}
+    .app-header{min-height:74px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px clamp(18px,3vw,42px)}
+    .identity{display:flex;align-items:center;gap:13px}
+    .logo{width:42px;height:42px;display:grid;place-items:center;background:#24366e;color:white;border-radius:13px;font-size:22px;font-weight:900;flex-shrink:0}
+    .identity h1{font-size:20px;letter-spacing:-.035em;line-height:1.25;margin:0}
+    .identity p{color:var(--muted);font-size:12px;margin:2px 0 0}
+    .workspace{display:grid;grid-template-columns:minmax(325px,385px) minmax(0,1fr);min-height:calc(100vh - 74px);max-width:1620px;margin:0 auto;gap:0}
+    .tools{padding:24px 22px 36px;border-right:1px solid var(--line);background:var(--surface)}
+    .tools-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
+    .tools-heading h2{font-size:18px;margin:0;letter-spacing:-.025em}
+    .step{color:var(--accent);font-size:12px;font-weight:800;letter-spacing:.02em}
+    .panel{padding:16px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;background:#fff}
+    .panel h3{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:15px}
+    .number{width:23px;height:23px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);border-radius:8px;font-size:12px;font-weight:800}
+    .minor{font-size:12px;color:var(--muted);margin:7px 0 0;line-height:1.5}
+    .upload{display:flex;align-items:center;justify-content:center;gap:9px;text-align:center;width:100%;min-height:66px;padding:12px;border:1.5px dashed #94a6cd;background:#f7f9ff;border-radius:12px;color:#264aaf;font-size:14px;font-weight:750;transition:.15s}
+    .upload.drag-over{border-color:var(--accent);background:#e6ecff}
+    .upload:hover{background:#e9eeff}
+    #fileInput{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+    .filename{font-size:12px;color:var(--muted);margin:9px 0 0;overflow-wrap:anywhere;min-height:18px}
+    label.field{display:block;font-size:13px;font-weight:750;margin:12px 0 7px}
+    textarea{width:100%;resize:vertical;min-height:92px;max-height:280px;border:1px solid #b6c3d7;border-radius:10px;padding:11px 12px;color:var(--ink);background:white;line-height:1.55}
+    .field-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px}
+    .field-row label{font-weight:720;font-size:13px}
+    .value{font-size:13px;color:#2449a6;min-width:56px;text-align:right;font-variant-numeric:tabular-nums;font-weight:750}
+    input[type=range]{display:block;width:100%;height:24px;margin:3px 0 4px;accent-color:var(--accent)}
+    .color-line{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:13px}
+    .color-line label{font-size:13px;font-weight:720}
+    input[type=color]{height:38px;width:74px;padding:4px;background:#fff;border:1px solid #a9b7ce;border-radius:10px;cursor:pointer}
+    .preview-area{padding:25px clamp(18px,3vw,48px) 42px;min-width:0;display:flex;flex-direction:column;align-items:center}
+    .preview-top{width:min(100%,720px);display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:16px}
+    .preview-top h2{font-size:19px;margin:0 0 4px;letter-spacing:-.025em}
+    .preview-top p{margin:0;color:var(--muted);font-size:13px}
+    .ratio{border:1px solid var(--line);border-radius:999px;background:#fff;padding:6px 10px;color:var(--muted);font-size:12px;white-space:nowrap;font-weight:750}
+    .canvas-shell{width:min(100%,min(60vh,620px));border-radius:17px;overflow:hidden;box-shadow:0 16px 45px rgba(19,33,63,.13);background:#fff;aspect-ratio:1;align-self:center;border:1px solid #cad3e5}
+    canvas{width:100%;height:100%;display:block;aspect-ratio:1}
+    .preview-actions{width:min(100%,720px);display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:17px;flex-wrap:wrap}
+    .status{min-height:38px;padding:9px 12px;border:1px solid #b7e0d0;background:var(--good-soft);color:var(--good);border-radius:10px;font-size:13px;flex:1}
+    .status.error{border-color:#f1bec7;background:var(--danger-soft);color:var(--danger)}
+    .btn{border:0;border-radius:10px;padding:11px 17px;font-size:14px;font-weight:800;min-height:44px;white-space:nowrap}
+    .btn-primary{background:var(--accent);color:white}
+    .btn-primary:hover{background:#2444b7}
+    .footer-note{width:min(100%,720px);margin:17px 0 0;font-size:12px;color:var(--muted)}
+    .hint{margin:0;color:var(--muted);font-size:13px}
+    @media(max-width:850px){.workspace{grid-template-columns:1fr}.tools{border-right:0;border-bottom:1px solid var(--line);padding:18px}.preview-area{padding:22px 18px 32px}.canvas-shell{width:min(100%,570px,63vh)}}
+    @media(max-width:540px){.app-header{min-height:70px;padding:12px 16px}.identity h1{font-size:18px}.panel{padding:14px}.preview-actions{align-items:stretch}.preview-actions .btn{width:100%}.canvas-shell{width:100%}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+    .fit-note{padding:9px 10px;border-radius:9px;background:#eef7f3;color:#176247;min-height:38px;margin-top:12px}
+    .fit-note.warning{background:#fff4e4;color:#8b4a11}
+    .ratio-selector{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+    .ratio-button{border:1px solid #b9c5da;border-radius:11px;background:#fff;color:var(--ink);min-height:64px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:1px;cursor:pointer;padding:8px 4px}
+    .ratio-button strong{font-size:17px;font-variant-numeric:tabular-nums}
+    .ratio-button small{font-size:12px;color:var(--muted)}
+    .ratio-button:hover{background:#f3f6ff}
+    .ratio-button.active{background:var(--accent-soft);border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+    .ratio-button.active small{color:#264aac}
+    .template-panel{border-color:#c5d2f1;background:#fafbff}
+    .template-input,.template-select{width:100%;padding:11px 12px;min-height:44px;border:1px solid #aebdd6;background:#fff;color:var(--ink);border-radius:10px}
+    .template-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+    .template-action{min-height:44px;border:1px solid #acbcdb;color:#263b71;background:#fff;border-radius:10px;padding:9px 8px;font-size:13px;font-weight:750;white-space:normal}
+    .template-action:hover{background:#edf2ff}
+    .template-action.create{background:#3558d4;color:white;border-color:#3558d4}
+    .template-action.danger{color:#9a2330;border-color:#e7b8bf}
+    .template-action.danger:hover{background:#fff2f2}
+    .template-message{min-height:38px;margin-top:11px;padding:8px 10px;border:1px solid #bedacb;border-radius:9px;background:#f1faf5;color:#176247;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+    .template-message.error{background:#fff3f3;color:#9a2330;border-color:#e8b9bf}
+    .template-meta{font-size:12px;color:var(--muted);margin-top:7px}
+    .template-row{margin-top:8px}
+    .template-summary{font-size:12px;color:#33466a;margin:11px 0 0;min-height:20px}
+    .template-small-note{font-size:12px;color:var(--muted);line-height:1.55;margin:8px 0 0}
+    .canvas-shell{width:min(100%,calc(65vh * var(--ratio-w) / var(--ratio-h)),650px);height:auto;aspect-ratio:var(--ratio-w)/var(--ratio-h)}
+    .canvas-shell canvas{width:100%;height:100%;aspect-ratio:auto}
+    @media(max-width:850px){.canvas-shell{width:min(100%,calc(60vh * var(--ratio-w) / var(--ratio-h)),570px)}}
+    @media(max-width:540px){.canvas-shell{width:min(100%,calc(57vh * var(--ratio-w) / var(--ratio-h)))}}
+
+    .json-panel{border-color:#c7d7dc;background:#f9fcfc}
+    .json-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+    .json-action{min-height:44px;border:1px solid #b5c6d2;border-radius:10px;background:white;color:#263e56;font-size:13px;font-weight:750;padding:9px 8px}
+    .json-action:hover{background:#eef4f7}
+    .json-action.strong{background:#286b78;border-color:#286b78;color:white}
+    .json-file{display:block;width:100%;font-size:13px;margin-top:9px;min-height:35px}
+    .json-info{font-size:12px;color:#415668;margin:9px 0 0;line-height:1.6}
+    .json-message{margin:11px 0 0;padding:9px 11px;border-radius:9px;background:#eef8f3;border:1px solid #b6ddca;color:#176449;font-size:12px;overflow-wrap:anywhere;min-height:37px}
+    .json-message.error{background:#fff2f3;border-color:#e7b6c0;color:#a12939}
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="identity"><div class="logo" aria-hidden="true">C</div><div><h1>짤·카드 스튜디오</h1><p>이미지와 문구를 한 화면에서 편집합니다</p></div></div>
+  </header>
+  <main class="workspace">
+    <aside class="tools" aria-label="편집 도구">
+      <div class="tools-heading"><h2>편집 도구</h2><span class="step">실시간 미리보기</span></div>
+      <section class="panel" aria-labelledby="imageTitle">
+        <h3 id="imageTitle"><span class="number">01</span> 배경 이미지</h3>
+        <input id="fileInput" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" aria-label="PNG 또는 JPEG 이미지 선택">
+        <label id="dropZone" for="fileInput" class="upload">이미지 선택 또는 이곳에 드래그</label>
+        <p id="fileName" class="filename">기본 배경은 직접 제작한 그래픽입니다.</p>
+        <p class="minor">PNG · JPG · JPEG / 최대 10MB · 최대 2,000만 픽셀. 원본 파일은 변경하지 않습니다.</p>
+      </section>
+      <section class="panel" aria-labelledby="ratioTitle">
+        <h3 id="ratioTitle"><span class="number">02</span> 카드 화면비</h3>
+        <div class="ratio-selector" role="group" aria-label="카드 화면비 선택">
+          <button type="button" class="ratio-button active" data-ratio="1:1" aria-pressed="true"><strong>1:1</strong><small>정사각형</small></button>
+          <button type="button" class="ratio-button" data-ratio="4:5" aria-pressed="false"><strong>4:5</strong><small>세로 카드</small></button>
+          <button type="button" class="ratio-button" data-ratio="9:16" aria-pressed="false"><strong>9:16</strong><small>스토리</small></button>
+        </div>
+        <p class="minor" id="ratioDetail">출력 크기: 1080 × 1080px. 각 비율에서 배경은 가운데 기준으로 채워지고 잘립니다.</p>
+      </section>
+      <section class="panel" aria-labelledby="textTitle">
+        <h3 id="textTitle"><span class="number">03</span> 문구 편집</h3>
+        <label for="caption" class="field">표시할 문구</label>
+        <textarea id="caption" rows="3" maxlength="1000" spellcheck="false">오늘도 좋은 하루!</textarea>
+        <div class="field-row"><label for="posX">가로 위치</label><output id="posXValue" class="value" for="posX">50%</output></div>
+        <input id="posX" type="range" min="5" max="95" value="50" step="1">
+        <div class="field-row"><label for="posY">세로 위치</label><output id="posYValue" class="value" for="posY">72%</output></div>
+        <input id="posY" type="range" min="5" max="95" value="72" step="1">
+        <div class="field-row"><label for="fontSize">글자 크기</label><output id="fontSizeValue" class="value" for="fontSize">78px</output></div>
+        <input id="fontSize" type="range" min="24" max="160" value="78" step="2">
+        <div class="color-line"><label for="textColor">글자 색상</label><input id="textColor" type="color" value="#ffffff"></div>
+        <p id="fitNote" class="minor fit-note" role="status" aria-live="polite">문구가 카드 안에 들어가도록 자동 맞춤을 확인합니다.</p>
+        <p class="minor">위치는 이미지 전체를 기준으로 한 비율입니다. 글자가 화면 밖으로 나가지 않도록 가장자리를 보정합니다.</p>
+      </section>
+      <section class="panel template-panel" aria-labelledby="templatesTitle">
+        <h3 id="templatesTitle"><span class="number">04</span> 내 템플릿</h3>
+        <p class="minor">이미지·문구·비율·색상·위치를 함께 저장합니다. 이 브라우저에만 저장되며 다른 기기와 자동 동기화되지 않습니다.</p>
+        <label class="field" for="templateName">템플릿 이름</label>
+        <input id="templateName" class="template-input" type="text" maxlength="60" placeholder="예: 반응형 안내 카드" autocomplete="off">
+        <button id="createTemplateButton" class="template-action create template-row" type="button" style="width:100%">새 템플릿 저장</button>
+        <label class="field" for="templateSelect">저장한 템플릿 선택</label>
+        <select id="templateSelect" class="template-select" aria-label="저장된 템플릿 선택"><option value="">저장된 템플릿 없음</option></select>
+        <p id="templateSummary" class="template-summary">저장된 템플릿 0개</p>
+        <div class="template-buttons">
+          <button id="loadTemplateButton" class="template-action" type="button" disabled>불러오기</button>
+          <button id="updateTemplateButton" class="template-action" type="button" disabled>수정 저장</button>
+          <button id="deleteTemplateButton" class="template-action danger" type="button" disabled>삭제</button>
+        </div>
+        <p id="templateMessage" class="template-message" role="status" aria-live="polite">이름을 입력하고 ‘새 템플릿 저장’을 누르세요.</p>
+        <p class="template-small-note">저장 전에 이미지 데이터를 축소·재인코딩합니다. 브라우저 저장 공간이 부족하면 기존 목록을 지우지 않고 오류를 알려줍니다. 최대 30개.</p>
+      </section>
+
+      <section class="panel json-panel" aria-labelledby="jsonTitle">
+        <h3 id="jsonTitle"><span class="number">05</span> 템플릿 백업 · 복원</h3>
+        <p class="minor">템플릿 목록 전체를 JSON으로 백업하고 다른 브라우저에서 복원할 수 있습니다. JSON에는 템플릿에 저장된 배경 이미지도 포함됩니다.</p>
+        <div class="json-actions">
+          <button id="exportJsonButton" class="json-action" type="button">JSON 백업 저장</button>
+          <button id="importJsonButton" class="json-action strong" type="button">JSON 불러오기</button>
+        </div>
+        <input id="importJsonFile" type="file" accept=".json,application/json" class="json-file" aria-label="복원할 JSON 파일 선택" hidden>
+        <p id="jsonMessage" class="json-message" role="status" aria-live="polite">JSON 복원 시 파일 전체를 검사한 뒤 저장하며, 실패하면 기존 목록을 유지합니다.</p>
+        <p class="json-info">복원에 성공하면 현재 저장된 템플릿 목록을 대체합니다. 유효하지 않은 파일은 기존 편집·템플릿에 영향을 주지 않습니다. 개인 정보가 포함된 이미지·문구의 JSON은 공개로 공유하지 마세요.</p>
+      </section>
+      <p class="hint">긴 문구는 이미지 크기에 맞춰 자동 조정합니다. 모두 표시할 수 없는 경우 원문을 보존하고 경고합니다.</p>
+    </aside>
+    <section class="preview-area" aria-labelledby="previewTitle">
+      <div class="preview-top"><div><h2 id="previewTitle">미리보기</h2><p>같은 캔버스 결과를 그대로 PNG로 내려받습니다. 화면비마다 이미지 잘림과 문구를 확인하세요.</p></div><span class="ratio" id="ratioBadge">1:1 · 1080 × 1080</span></div>
+      <div id="canvasShell" class="canvas-shell" style="--ratio-w:1;--ratio-h:1"><canvas id="previewCanvas" width="1080" height="1080" aria-label="합성 이미지 미리보기" role="img">미리보기를 지원하는 브라우저가 필요합니다.</canvas></div>
+      <div class="preview-actions"><div id="status" class="status" role="status" aria-live="polite">준비 완료 · PNG 또는 JPEG를 선택해 보세요.</div><button id="downloadButton" class="btn btn-primary" type="button">PNG 이미지 저장</button></div>
+      <p class="footer-note">미리보기 캔버스와 다운로드 PNG는 동일한 픽셀 데이터로 생성됩니다. 배경 이미지는 가운데 정렬해 영역을 채우고 필요 부분을 잘라냅니다. EXIF·GPS 메타데이터는 새 PNG로 복사하지 않습니다.</p>
+    </section>
+  </main>
+  <script>
+    (() => {
+      "use strict";
+      const FORMATS = Object.freeze({
+        "1:1": { width: 1080, height: 1080, label: "정사각형" },
+        "4:5": { width: 1080, height: 1350, label: "세로 카드" },
+        "9:16": { width: 1080, height: 1920, label: "스토리" }
+      });
+      const MAX_FILE_BYTES = 10 * 1024 * 1024;
+      const MAX_PIXELS = 20_000_000;
+      const ALLOWED_EXTENSIONS = /\.(png|jpe?g)$/i;
+      const $ = id => document.getElementById(id);
+      const canvas = $("previewCanvas");
+      const ctx = canvas.getContext("2d", { alpha: false });
+      const ui = {
+        fileInput: $("fileInput"), fileName: $("fileName"), dropZone: $("dropZone"),
+        caption: $("caption"), posX: $("posX"), posY: $("posY"),
+        fontSize: $("fontSize"), textColor: $("textColor"),
+        status: $("status"), download: $("downloadButton"),
+        canvasShell: $("canvasShell"), ratioBadge: $("ratioBadge"), ratioDetail: $("ratioDetail"), fitNote: $("fitNote"),
+        templateName: $("templateName"), templateSelect: $("templateSelect"),
+        templateSummary: $("templateSummary"), templateMessage: $("templateMessage"),
+        templateCreate: $("createTemplateButton"), templateLoad: $("loadTemplateButton"),
+        templateUpdate: $("updateTemplateButton"), templateDelete: $("deleteTemplateButton"),
+        exportJson: $("exportJsonButton"), importJson: $("importJsonButton"), importJsonFile: $("importJsonFile"), jsonMessage: $("jsonMessage")
+      };
+      let sourceImage = null;
+      let sourceFileName = null;
+      let selectedFormat = "1:1";
+      const TEMPLATE_KEY = "t03-card-studio-templates-v1";
+      const TEMPLATE_VERSION = 1;
+      const MAX_TEMPLATES = 30;
+      const MAX_TEMPLATE_IMAGE_CHARS = 1_500_000;
+      let templates = [];
+      let templateStorageReady = true;
+      let templateBusy = false;
+      let imageSequence = 0;
+      let renderQueued = false;
+      let exportBusy = false;
+      let jsonBusy = false;
+      const MAX_IMPORT_JSON_BYTES = 8 * 1024 * 1024;
+      const ratioButtons = Array.from(document.querySelectorAll("[data-ratio]"));
+
+      function setStatus(message, isError = false) {
+        ui.status.textContent = message;
+        ui.status.classList.toggle("error", isError);
+      }
+      function chooseFormat(key) {
+        const format = FORMATS[key];
+        if (!format) return;
+        selectedFormat = key;
+        // 변경한 해상도 그대로 미리보기를 그리고 같은 캔버스를 다운로드한다.
+        canvas.width = format.width;
+        canvas.height = format.height;
+        const [rw, rh] = key.split(":");
+        ui.canvasShell.style.setProperty("--ratio-w", rw);
+        ui.canvasShell.style.setProperty("--ratio-h", rh);
+        ui.ratioBadge.textContent = `${key} · ${format.width} × ${format.height}`;
+        ui.ratioDetail.textContent = `출력 크기: ${format.width} × ${format.height}px. 가운데 기준으로 배경을 잘라 채웁니다.`;
+        ratioButtons.forEach(button => {
+          const active = button.dataset.ratio === key;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-pressed", String(active));
+        });
+        queueRender();
+        setStatus(`${key} (${format.width} × ${format.height}px) 화면비로 변경했습니다. 문구와 이미지가 유지됩니다.`);
+      }
+      function drawDemoGraphic() {
+        const { width: W, height: H } = canvas;
+        const bg = ctx.createLinearGradient(0, 0, W, H);
+        bg.addColorStop(0, "#164789");
+        bg.addColorStop(.53, "#575ec3");
+        bg.addColorStop(1, "#df778b");
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = .13;
+        ctx.fillStyle = "#ffffff";
+        for (let x = 0; x <= W; x += 58) ctx.fillRect(x, 0, 1, H);
+        for (let y = 0; y <= H; y += 58) ctx.fillRect(0, y, W, 1);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "rgba(255,255,255,.12)";
+        ctx.beginPath(); ctx.arc(W * .75, H * .24, W * .26, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,.19)";
+        ctx.beginPath(); ctx.arc(W * .20, H * .79, W * .21, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,.85)";
+        ctx.font = '700 38px system-ui, sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("CARD STUDIO", W / 2, H * .19);
+        ctx.fillStyle = "rgba(255,255,255,.68)";
+        ctx.font = '500 24px system-ui, sans-serif';
+        ctx.fillText("YOUR IMAGE · YOUR WORDS", W / 2, H * .24);
+      }
+      function coverImage(img) {
+        const { width: W, height: H } = canvas;
+        const iw = img.naturalWidth;
+        const ih = img.naturalHeight;
+        const srcRatio = iw / ih;
+        const dstRatio = W / H;
+        let sx = 0, sy = 0, sw = iw, sh = ih;
+        if (srcRatio > dstRatio) {
+          sw = ih * dstRatio;
+          sx = (iw - sw) / 2;
+        } else {
+          sh = iw / dstRatio;
+          sy = (ih - sh) / 2;
+        }
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+      }
+      function splitGraphemes(text) {
+        if (typeof Intl.Segmenter === "function") {
+          const segmenter = new Intl.Segmenter("ko", { granularity: "grapheme" });
+          return Array.from(segmenter.segment(text), part => part.segment);
+        }
+        return Array.from(text);
+      }
+      function wrapLines(text, maxWidth) {
+        const lines = [];
+        for (const paragraph of text.replace(/\r\n?/g, "\n").split("\n")) {
+          if (!paragraph) { lines.push(""); continue; }
+          let current = "";
+          for (const part of splitGraphemes(paragraph)) {
+            const next = current + part;
+            if (current && ctx.measureText(next).width > maxWidth) {
+              lines.push(current);
+              current = part;
+            } else current = next;
+          }
+          lines.push(current);
+        }
+        return lines;
+      }
+      const FONT_FAMILY = 'system-ui, -apple-system, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+      const MIN_FIT_FONT_SIZE = 12;
+      function measureCaptionAt(text, fontSize, maxWidth) {
+        ctx.font = `800 ${fontSize}px ${FONT_FAMILY}`;
+        const lines = wrapLines(text, maxWidth);
+        return { fontSize, lines, lineHeight: fontSize * 1.24 };
+      }
+      function layoutCaption(text, requestedSize, W, H, margin) {
+        const maxWidth = W - margin * 2;
+        const maxHeight = H - margin * 2;
+        const fits = layout => layout.lines.length * layout.lineHeight <= maxHeight;
+        let layout = measureCaptionAt(text, requestedSize, maxWidth);
+        if (!fits(layout)) {
+          // 세로 공간도 고려해 모든 내용을 표시할 수 있는 최대 글자 크기를 찾는다.
+          let low = MIN_FIT_FONT_SIZE, high = requestedSize - 1;
+          let best = null;
+          while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            const next = measureCaptionAt(text, mid, maxWidth);
+            if (fits(next)) { best = next; low = mid + 1; }
+            else high = mid - 1;
+          }
+          layout = best ?? measureCaptionAt(text, MIN_FIT_FONT_SIZE, maxWidth);
+        }
+        let truncated = false;
+        if (!fits(layout)) {
+          // 수백 개의 강제 줄바꿈처럼 물리적으로 불가능한 입력만 미리보기에서 축약한다.
+          // textarea 원문은 절대 변경하지 않고, 이용자에게 명시적으로 고지한다.
+          const maxLines = Math.max(1, Math.floor(maxHeight / layout.lineHeight));
+          const visible = layout.lines.slice(0, maxLines);
+          let last = visible[visible.length - 1].trimEnd();
+          const graphemes = splitGraphemes(last);
+          ctx.font = `800 ${layout.fontSize}px ${FONT_FAMILY}`;
+          while (graphemes.length && ctx.measureText(graphemes.join("") + "…").width > maxWidth) graphemes.pop();
+          visible[visible.length - 1] = graphemes.join("") + "…";
+          layout.lines = visible;
+          truncated = true;
+        }
+        return { ...layout, truncated };
+      }
+      function drawCaption() {
+        const text = ui.caption.value;
+        if (!text) {
+          ui.fitNote.textContent = "빈 문구 · 이미지만 출력합니다. 편집 내용은 유지됩니다.";
+          ui.fitNote.classList.remove("warning");
+          return;
+        }
+        const { width: W, height: H } = canvas;
+        const requestedSize = Number(ui.fontSize.value);
+        const x = W * Number(ui.posX.value) / 100;
+        const desiredY = H * Number(ui.posY.value) / 100;
+        const margin = 46;
+        const layout = layoutCaption(text, requestedSize, W, H, margin);
+        const { lines, fontSize: size, lineHeight } = layout;
+        const allHeight = lines.length * lineHeight;
+        const firstY = Math.max(margin, Math.min(desiredY - allHeight / 2, H - margin - allHeight));
+        const hex = ui.textColor.value;
+        const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+        const brightness = rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
+        ctx.font = `800 ${size}px ${FONT_FAMILY}`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = brightness < 125 ? "rgba(255,255,255,.75)" : "rgba(0,0,0,.68)";
+        ctx.fillStyle = hex;
+        ctx.lineWidth = Math.max(4, size / 11);
+        lines.forEach((line, index) => {
+          const lineWidth = ctx.measureText(line).width;
+          const safeX = Math.max(margin, Math.min(x - lineWidth / 2, W - margin - lineWidth));
+          const y = firstY + index * lineHeight;
+          ctx.strokeText(line, safeX, y);
+          ctx.fillText(line, safeX, y);
+        });
+        ui.fitNote.classList.toggle("warning", layout.truncated);
+        if (layout.truncated) {
+          ui.fitNote.textContent = `문구가 너무 길어 미리보기에는 처음 ${lines.length}줄만 표시했습니다. 입력 원문은 그대로 유지됩니다. 글이나 줄바꿈을 줄여 주세요.`;
+        } else if (size < requestedSize) {
+          ui.fitNote.textContent = `자동 맞춤 · ${requestedSize}px → 실제 ${size}px / 총 ${lines.length}줄 · 문구 전체 표시`;
+        } else {
+          ui.fitNote.textContent = `문구 전체 표시 · 실제 ${size}px / 총 ${lines.length}줄`;
+        }
+      }
+      function render() {
+        renderQueued = false;
+        const { width: W, height: H } = canvas;
+        ctx.clearRect(0, 0, W, H);
+        if (sourceImage) coverImage(sourceImage);
+        else drawDemoGraphic();
+        drawCaption();
+      }
+      function queueRender() {
+        if (renderQueued) return;
+        renderQueued = true;
+        requestAnimationFrame(render);
+      }
+      function syncControls() {
+        for (const id of ["posX", "posY", "fontSize"]) {
+          $(id + "Value").textContent = ui[id].value + (id === "fontSize" ? "px" : "%");
+        }
+        queueRender();
+      }
+      function looksLikeImage(bytes) {
+        const p = new Uint8Array(bytes);
+        if (p.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((b, i) => p[i] === b)) return "image/png";
+        if (p.length >= 3 && p[0] === 255 && p[1] === 216 && p[2] === 255) return "image/jpeg";
+        return null;
+      }
+      function decodeLocalImage(file, detectedMime) {
+        return new Promise((resolve, reject) => {
+          const blob = new Blob([file], { type: detectedMime });
+          const url = URL.createObjectURL(blob);
+          const img = new Image();
+          let finished = false;
+          function cleanup() { URL.revokeObjectURL(url); }
+          img.onload = () => {
+            if (finished) return;
+            finished = true;
+            cleanup();
+            resolve(img);
+          };
+          img.onerror = () => {
+            if (finished) return;
+            finished = true;
+            cleanup();
+            reject(new Error("이미지를 열 수 없습니다. 손상된 파일일 수 있습니다."));
+          };
+          img.src = url;
+        });
+      }
+      async function handleImage(file) {
+        if (!file) return;
+        const seq = ++imageSequence;
+        if (!ALLOWED_EXTENSIONS.test(file.name)) {
+          setStatus("지원하지 않는 파일 확장자입니다. PNG 또는 JPG/JPEG만 사용할 수 있습니다. 기존 작업은 유지됩니다.", true);
+          return;
+        }
+        if (file.size === 0 || file.size > MAX_FILE_BYTES) {
+          setStatus("이미지 크기가 올바르지 않습니다. 0바이트 또는 10MB 초과 파일은 사용할 수 없습니다. 기존 작업은 유지됩니다.", true);
+          return;
+        }
+        setStatus("이미지를 확인하는 중입니다…");
+        try {
+          const header = await file.slice(0, 16).arrayBuffer();
+          if (seq !== imageSequence) return;
+          const actualMime = looksLikeImage(header);
+          if (!actualMime || (actualMime === "image/png" && !/\.png$/i.test(file.name)) || (actualMime === "image/jpeg" && !/\.jpe?g$/i.test(file.name))) {
+            throw new Error("파일 확장자와 실제 이미지 형식이 일치하지 않거나 이미지가 아닙니다.");
+          }
+          const loaded = await decodeLocalImage(file, actualMime);
+          if (seq !== imageSequence) return;
+          if (!loaded.naturalWidth || !loaded.naturalHeight || loaded.naturalWidth * loaded.naturalHeight > MAX_PIXELS) {
+            throw new Error("이미지 크기가 너무 큽니다. 최대 2,000만 픽셀까지 사용할 수 있습니다.");
+          }
+          sourceImage = loaded;
+          sourceFileName = file.name;
+          ui.fileName.textContent = `${file.name} · ${loaded.naturalWidth} × ${loaded.naturalHeight}`;
+          setStatus(`${actualMime === "image/png" ? "PNG" : "JPEG"} 이미지 불러오기 완료 · 문구 편집 가능`);
+          queueRender();
+        } catch (error) {
+          if (seq !== imageSequence) return;
+          setStatus(`${error.message} 기존 이미지와 문구는 유지됩니다.`, true);
+        }
+      }
+
+      // 편집기 상태 전체(이미지 포함)를 재현 가능한 템플릿으로 보존한다.
+      function templateNotice(message, error = false) {
+        ui.templateMessage.textContent = message;
+        ui.templateMessage.classList.toggle("error", error);
+      }
+      function templateId() {
+        if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+        return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      }
+      function validTemplate(t) {
+        return t && typeof t === "object" && !Array.isArray(t)
+          && typeof t.id === "string" && /^[a-z0-9-]{8,80}$/i.test(t.id)
+          && typeof t.name === "string" && t.name.trim().length > 0 && t.name.length <= 60
+          && Object.hasOwn(FORMATS, t.ratio)
+          && typeof t.caption === "string" && t.caption.length <= 1000
+          && Number.isInteger(t.posX) && t.posX >= 5 && t.posX <= 95
+          && Number.isInteger(t.posY) && t.posY >= 5 && t.posY <= 95
+          && Number.isInteger(t.fontSize) && t.fontSize >= 24 && t.fontSize <= 160
+          && typeof t.color === "string" && /^#[0-9a-f]{6}$/i.test(t.color)
+          && (t.imageData === null || (typeof t.imageData === "string"
+              && t.imageData.length <= MAX_TEMPLATE_IMAGE_CHARS
+              && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(t.imageData)))
+          && (t.imageName === null || (typeof t.imageName === "string" && t.imageName.length <= 180))
+          && typeof t.createdAt === "string" && !Number.isNaN(Date.parse(t.createdAt))
+          && typeof t.updatedAt === "string" && !Number.isNaN(Date.parse(t.updatedAt));
+      }
+      function readTemplates() {
+        try {
+          const raw = localStorage.getItem(TEMPLATE_KEY);
+          if (raw === null) return;
+          const parsed = JSON.parse(raw);
+          if (!parsed || parsed.version !== TEMPLATE_VERSION || !Array.isArray(parsed.templates)
+              || parsed.templates.length > MAX_TEMPLATES
+              || parsed.templates.some(t => !validTemplate(t))
+              || new Set(parsed.templates.map(t => t.id)).size !== parsed.templates.length) {
+            throw new Error("템플릿 저장 데이터 형식이 유효하지 않습니다.");
+          }
+          templates = parsed.templates;
+        } catch (error) {
+          templateStorageReady = false;
+          templateNotice(`저장된 템플릿을 읽을 수 없습니다: ${error.message} 기존 저장 데이터는 삭제하지 않았습니다.`, true);
+        }
+      }
+      function persistTemplateList(next) {
+        if (!templateStorageReady) throw new Error("기존 저장 데이터를 읽을 수 없어 덮어쓰지 않았습니다. 저장소 상태를 확인해 주세요.");
+        const json = JSON.stringify({version: TEMPLATE_VERSION, templates: next});
+        localStorage.setItem(TEMPLATE_KEY, json); // 예외 시 현재 목록은 변경되지 않는다.
+        templates = next;
+      }
+      function renderTemplateList(selectId = ui.templateSelect.value) {
+        const select = ui.templateSelect;
+        select.replaceChildren();
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = templates.length ? "템플릿을 선택하세요" : "저장된 템플릿 없음";
+        select.append(placeholder);
+        for (const template of templates) {
+          const option = document.createElement("option");
+          option.value = template.id;
+          option.textContent = `${template.name} · ${template.ratio}${template.imageData ? " · 이미지" : " · 기본 배경"}`;
+          select.append(option);
+        }
+        select.value = templates.some(t => t.id === selectId) ? selectId : "";
+        const count = templates.length;
+        ui.templateSummary.textContent = `저장된 템플릿 ${count}개 / 최대 ${MAX_TEMPLATES}개`;
+        const selected = !!templates.find(t => t.id === select.value);
+        for (const b of [ui.templateLoad, ui.templateUpdate, ui.templateDelete]) b.disabled = !selected || templateBusy;
+        ui.templateCreate.disabled = templateBusy || count >= MAX_TEMPLATES || !templateStorageReady;
+      }
+      function formatStoredImage(img) {
+        const ratio = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        let w = Math.max(1, Math.round(img.naturalWidth * ratio));
+        let h = Math.max(1, Math.round(img.naturalHeight * ratio));
+        const offscreen = document.createElement("canvas");
+        const c = offscreen.getContext("2d", {alpha: false});
+        for (const quality of [.82, .76, .68, .62]) {
+          offscreen.width = w; offscreen.height = h;
+          c.fillStyle = "#ffffff"; c.fillRect(0, 0, w, h);
+          c.drawImage(img, 0, 0, w, h);
+          const encoded = offscreen.toDataURL("image/jpeg", quality);
+          if (encoded.length <= MAX_TEMPLATE_IMAGE_CHARS) return encoded;
+          w = Math.max(1, Math.round(w * .78));
+          h = Math.max(1, Math.round(h * .78));
+        }
+        throw new Error("이미지를 템플릿 저장 한도 내로 줄일 수 없습니다.");
+      }
+      function snapshotTemplate(name, id = templateId(), createdAt = new Date().toISOString()) {
+        const now = new Date().toISOString();
+        const result = {
+          id, name, ratio: selectedFormat, caption: ui.caption.value,
+          posX: Number(ui.posX.value), posY: Number(ui.posY.value),
+          fontSize: Number(ui.fontSize.value), color: ui.textColor.value,
+          imageData: sourceImage ? formatStoredImage(sourceImage) : null,
+          imageName: sourceImage ? (sourceFileName || "저장된 이미지") .slice(0, 180) : null,
+          createdAt, updatedAt: now
+        };
+        if (!validTemplate(result)) throw new Error("템플릿 데이터 검증에 실패했습니다.");
+        return result;
+      }
+      function nameFromField() {
+        const name = ui.templateName.value.trim();
+        if (!name) throw new Error("템플릿 이름을 입력해 주세요.");
+        if (name.length > 60) throw new Error("템플릿 이름은 60자 이하여야 합니다.");
+        return name;
+      }
+      function busyTemplates(flag) {
+        templateBusy = flag;
+        renderTemplateList(ui.templateSelect.value);
+      }
+      function createTemplate() {
+        if (templateBusy) return;
+        try {
+          const name = nameFromField();
+          if (templates.length >= MAX_TEMPLATES) throw new Error(`템플릿은 ${MAX_TEMPLATES}개까지 저장할 수 있습니다.`);
+          const item = snapshotTemplate(name);
+          persistTemplateList([...templates, item]);
+          renderTemplateList(item.id);
+          templateNotice(`‘${item.name}’ 생성 완료 · 이미지와 문구 설정을 저장했습니다.`);
+        } catch (error) {
+          templateNotice(`생성 실패: ${error.name === "QuotaExceededError" ? "브라우저 저장 공간이 부족합니다. 기존 템플릿은 유지됩니다." : error.message}`, true);
+        }
+      }
+      function selectedTemplate() {
+        const item = templates.find(t => t.id === ui.templateSelect.value);
+        if (!item) throw new Error("먼저 템플릿을 선택해 주세요.");
+        return item;
+      }
+      function decodeStoredImage(data) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error("저장된 배경 이미지를 복원할 수 없습니다."));
+          image.src = data;
+        });
+      }
+      async function loadTemplate() {
+        if (templateBusy) return;
+        let item;
+        try { item = selectedTemplate(); } catch (error) { templateNotice(error.message, true); return; }
+        const seq = ++imageSequence; // 처리 중이던 이미지 업로드 결과는 무시
+        busyTemplates(true);
+        try {
+          const loaded = item.imageData ? await decodeStoredImage(item.imageData) : null;
+          if (seq !== imageSequence) return;
+          if (loaded && (!loaded.naturalWidth || !loaded.naturalHeight)) throw new Error("저장된 배경 이미지가 손상되었습니다.");
+          sourceImage = loaded;
+          sourceFileName = item.imageName;
+          ui.fileName.textContent = loaded ? `${item.imageName || "저장된 이미지"} · 템플릿에서 복원됨` : "기본 배경은 직접 제작한 그래픽입니다.";
+          ui.caption.value = item.caption;
+          ui.posX.value = String(item.posX);
+          ui.posY.value = String(item.posY);
+          ui.fontSize.value = String(item.fontSize);
+          ui.textColor.value = item.color;
+          ui.templateName.value = item.name;
+          chooseFormat(item.ratio);
+          syncControls();
+          templateNotice(`‘${item.name}’ 불러오기 완료 · 문구·비율·색상·배경 복원`);
+          setStatus(`템플릿 ‘${item.name}’ 불러오기 완료`);
+        } catch (error) {
+          templateNotice(`불러오기 실패: ${error.message}. 현재 작업은 유지됩니다.`, true);
+        } finally { busyTemplates(false); }
+      }
+      function updateTemplate() {
+        if (templateBusy) return;
+        try {
+          const old = selectedTemplate();
+          const name = nameFromField();
+          const nextItem = snapshotTemplate(name, old.id, old.createdAt);
+          const updated = templates.map(t => t.id === old.id ? nextItem : t);
+          persistTemplateList(updated);
+          renderTemplateList(old.id);
+          templateNotice(`‘${name}’ 수정 저장 완료 · 기존 템플릿 ID와 나머지 목록을 유지했습니다.`);
+        } catch (error) {
+          templateNotice(`수정 실패: ${error.name === "QuotaExceededError" ? "저장 공간 부족 · 기존 템플릿 유지" : error.message}`, true);
+        }
+      }
+      function deleteTemplate() {
+        if (templateBusy) return;
+        try {
+          const target = selectedTemplate();
+          if (!confirm(`‘${target.name}’ 템플릿을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+          persistTemplateList(templates.filter(t => t.id !== target.id));
+          renderTemplateList("");
+          ui.templateName.value = "";
+          templateNotice(`‘${target.name}’ 삭제 완료 · 다른 템플릿과 현재 편집 화면은 유지됩니다.`);
+        } catch (error) {
+          templateNotice(`삭제 실패: ${error.message}. 기존 목록은 유지됩니다.`, true);
+        }
+      }
+
+
+      // JSON은 단순 텍스트 데이터로만 다룬다. 외부 JSON의 이미지도 다시 렌더링·재인코딩해
+      // 메타데이터를 제거하고, 모든 항목 검증 후 단 한 번만 저장한다.
+      function jsonNotice(message, error = false) {
+        ui.jsonMessage.textContent = message;
+        ui.jsonMessage.classList.toggle("error", error);
+      }
+      function safeTemplatesFromJson(raw) {
+        const object = JSON.parse(raw);
+        if (!object || typeof object !== "object" || Array.isArray(object)
+          || object.version !== TEMPLATE_VERSION || !Array.isArray(object.templates)
+          || object.templates.length > MAX_TEMPLATES) {
+          throw new Error("지원하지 않는 JSON 구조 또는 버전입니다. version 1의 templates 배열이 필요합니다.");
+        }
+        if (object.templates.some(item => !validTemplate(item))) {
+          throw new Error("필수 항목 누락 또는 값 형식 오류가 있습니다. 템플릿의 필드를 확인해 주세요.");
+        }
+        const ids = object.templates.map(item => item.id);
+        if (new Set(ids).size !== ids.length) throw new Error("중복된 템플릿 ID가 있습니다.");
+        // JSON 안에 예상하지 않은 필드가 있어도 내부 상태에 들여오지 않는다.
+        return object.templates.map(item => ({
+          id: item.id, name: item.name, ratio: item.ratio, caption: item.caption,
+          posX: item.posX, posY: item.posY, fontSize: item.fontSize,
+          color: item.color, imageData: item.imageData, imageName: item.imageName,
+          createdAt: item.createdAt, updatedAt: item.updatedAt
+        }));
+      }
+      async function sanitizeImportedTemplates(items) {
+        const safe = [];
+        for (const item of items) {
+          // 형식만 JPEG라고 속인 URL이나 손상된 이미지 데이터가 있으면 전체 가져오기를 중지한다.
+          const img = item.imageData ? await decodeStoredImage(item.imageData) : null;
+          if (img && (!img.naturalWidth || !img.naturalHeight
+              || img.naturalWidth * img.naturalHeight > MAX_PIXELS)) {
+            throw new Error(`‘${item.name}’의 이미지 크기 또는 데이터가 유효하지 않습니다.`);
+          }
+          const sanitized = {
+            ...item, imageData: img ? formatStoredImage(img) : null
+          };
+          if (!validTemplate(sanitized)) throw new Error("이미지를 재검증한 결과가 올바르지 않습니다.");
+          safe.push(sanitized);
+        }
+        return safe;
+      }
+      function exportTemplatesJson() {
+        if (jsonBusy) return;
+        try {
+          const payload = JSON.stringify({ version: TEMPLATE_VERSION, templates }, null, 2);
+          const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "card-studio-templates.json";
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          jsonNotice(`JSON 백업 저장 · 템플릿 ${templates.length}개. 파일을 안전한 위치에 보관하세요.`);
+        } catch (error) {
+          jsonNotice(`JSON 백업 실패: ${error.message}`, true);
+        }
+      }
+      async function importTemplatesJson(file) {
+        if (!file || jsonBusy) return;
+        jsonBusy = true;
+        ui.importJson.disabled = true;
+        ui.exportJson.disabled = true;
+        busyTemplates(true);
+        try {
+          if (!/\.json$/i.test(file.name)) throw new Error(".json 파일만 가져올 수 있습니다.");
+          if (file.size === 0 || file.size > MAX_IMPORT_JSON_BYTES) {
+            throw new Error("JSON은 0바이트를 초과하고 8MB 이하여야 합니다.");
+          }
+          const text = await file.text();
+          const parsedItems = safeTemplatesFromJson(text);
+          const sanitized = await sanitizeImportedTemplates(parsedItems);
+          // 기존 편집 화면이나 템플릿 목록은 여전히 변하지 않았다.
+          if (!confirm(`검증된 템플릿 ${sanitized.length}개로 현재 템플릿 ${templates.length}개를 교체할까요?\n필요하면 먼저 ‘JSON 백업 저장’으로 기존 목록을 보관하세요.`)) {
+            jsonNotice("가져오기를 취소했습니다. 기존 템플릿을 그대로 유지합니다.");
+            return;
+          }
+          persistTemplateList(sanitized); // 저장 실패 시 이전 localStorage와 메모리 목록 그대로 유지
+          renderTemplateList("");
+          ui.templateName.value = "";
+          templateNotice(`JSON 복원 완료 · 템플릿 ${sanitized.length}개를 불러왔습니다.`);
+          jsonNotice(`복원 성공 · 유효한 템플릿 ${sanitized.length}개를 저장했습니다. 기존 편집 화면은 유지됩니다.`);
+        } catch (error) {
+          const label = error instanceof SyntaxError ? "JSON 문법이 올바르지 않습니다." : error.message;
+          jsonNotice(`JSON 가져오기 거부: ${label} 기존 템플릿과 편집 내용은 유지됩니다.`, true);
+        } finally {
+          jsonBusy = false;
+          ui.importJson.disabled = false;
+          ui.exportJson.disabled = false;
+          busyTemplates(false);
+        }
+      }
+
+      ui.fileInput.addEventListener("change", () => {
+        const file = ui.fileInput.files && ui.fileInput.files[0];
+        void handleImage(file);
+        ui.fileInput.value = "";
+      });
+      for (const type of ["dragenter", "dragover"]) {
+        ui.dropZone.addEventListener(type, event => { event.preventDefault(); ui.dropZone.classList.add("drag-over"); });
+      }
+      for (const type of ["dragleave", "drop"]) {
+        ui.dropZone.addEventListener(type, event => { event.preventDefault(); ui.dropZone.classList.remove("drag-over"); });
+      }
+      ui.dropZone.addEventListener("drop", event => {
+        const file = event.dataTransfer?.files?.[0];
+        if (file) void handleImage(file);
+      });
+      for (const id of ["caption", "posX", "posY", "fontSize", "textColor"]) {
+        ui[id].addEventListener("input", syncControls);
+      }
+      ratioButtons.forEach(button => button.addEventListener("click", () => chooseFormat(button.dataset.ratio)));
+      ui.download.addEventListener("click", async () => {
+        if (exportBusy) return;
+        exportBusy = true;
+        ui.download.disabled = true;
+        try {
+          // 비동기 글꼴 로드가 끝난 다음 미리보기를 동일한 글꼴로 다시 렌더링.
+          if (document.fonts?.ready) await document.fonts.ready;
+          render();
+          const keyAtExport = selectedFormat;
+          const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob(value => value ? resolve(value) : reject(new Error("PNG 변환에 실패했습니다.")), "image/png");
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `card-studio-${keyAtExport.replace(":", "x")}.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          setStatus(`${keyAtExport} · ${FORMATS[keyAtExport].width} × ${FORMATS[keyAtExport].height}px PNG 저장 완료`);
+        } catch (error) {
+          setStatus(`PNG 저장 실패: ${error.message}`, true);
+        } finally {
+          exportBusy = false;
+          ui.download.disabled = false;
+        }
+      });
+      ui.exportJson.addEventListener("click", exportTemplatesJson);
+      ui.importJson.addEventListener("click", () => { if (!jsonBusy) ui.importJsonFile.click(); });
+      ui.importJsonFile.addEventListener("change", () => {
+        const file = ui.importJsonFile.files?.[0];
+        ui.importJsonFile.value = "";
+        if (file) void importTemplatesJson(file);
+      });
+      ui.templateCreate.addEventListener("click", createTemplate);
+      ui.templateLoad.addEventListener("click", () => { void loadTemplate(); });
+      ui.templateUpdate.addEventListener("click", updateTemplate);
+      ui.templateDelete.addEventListener("click", deleteTemplate);
+      ui.templateSelect.addEventListener("change", () => {
+        const item = templates.find(t => t.id === ui.templateSelect.value);
+        if (item) ui.templateName.value = item.name;
+        renderTemplateList(ui.templateSelect.value);
+      });
+      readTemplates();
+      renderTemplateList();
+      syncControls();
+      render();
+    })();
+  </script>
+</body>
+</html>
