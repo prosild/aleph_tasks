@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "kind": "t04_public_daily_snapshot",
+  "signal_id": "seoul_air_temperature_2m",
+  "timezone": "Asia/Seoul",
+  "records": [
+    {
+      "record_date": "2026-10-22",
+      "source_url": "https://api.open-meteo.com/v1/forecast?latitude=37.5665&longitude=126.9780&current=temperature_2m&timezone=Asia%2FSeoul&temperature_unit=celsius&forecast_days=1",
+      "source_observed_at": "2026-10-22T15:45",
+      "normalized_value": 14.5,
+      "unit": "°C",
+      "queried_at": "2026-10-22T06:46:42.021Z",
+      "raw_temperature_2m": 14.5
+    },
+    {
+      "record_date": "2026-10-23",
+      "source_url": "https://api.open-meteo.com/v1/forecast?latitude=37.5665&longitude=126.9780&current=temperature_2m&timezone=Asia%2FSeoul&temperature_unit=celsius&forecast_days=1",
+      "source_observed_at": "2026-10-23T11:45",
+      "normalized_value": 15.4,
+      "unit": "°C",
+      "queried_at": "2026-10-23T02:59:17.540Z",
+      "raw_temperature_2m": 15.4
+    }
+  ]
+}
