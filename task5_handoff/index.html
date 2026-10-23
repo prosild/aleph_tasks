@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7fb">
+  <meta name="description" content="이미지와 문구를 합성하는 로컬 카드 편집기">
+  <title>짤·카드 스튜디오</title>
+  <style>
+    :root{color-scheme:light;--bg:#f6f7fb;--surface:#fff;--ink:#172136;--muted:#536277;--line:#dbe1ea;--soft:#eef3fa;--accent:#3658d4;--accent-soft:#ebefff;--danger:#a42b3b;--danger-soft:#fff2f2;--good:#176b4c;--good-soft:#eaf8f1;--radius:16px}
+    *{box-sizing:border-box}html{font-family:system-ui,-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;background:var(--bg);color:var(--ink)}body{margin:0;min-width:320px;font-size:15px;line-height:1.5}button,input,textarea,select{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.55}:focus-visible{outline:3px solid #6494f5;outline-offset:3px}
+    .app-header{min-height:74px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px clamp(18px,3vw,42px)}.identity{display:flex;align-items:center;gap:13px}.logo{width:42px;height:42px;display:grid;place-items:center;background:#24366e;color:white;border-radius:13px;font-size:22px;font-weight:900;flex-shrink:0}.identity h1{font-size:20px;letter-spacing:-.035em;line-height:1.25;margin:0}.identity p{color:var(--muted);font-size:12px;margin:2px 0 0}
+    .workspace{display:grid;grid-template-columns:minmax(325px,385px) minmax(0,1fr);min-height:calc(100vh - 74px);max-width:1620px;margin:0 auto}.tools{padding:24px 22px 36px;border-right:1px solid var(--line);background:var(--surface)}.tools-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}.tools-heading h2{font-size:18px;margin:0;letter-spacing:-.025em}.step{color:var(--accent);font-size:12px;font-weight:800}
+    .panel{padding:16px;border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;background:#fff}.panel h3{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:15px}.number{width:23px;height:23px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);border-radius:8px;font-size:12px;font-weight:800}.minor{font-size:12px;color:var(--muted);margin:7px 0 0;line-height:1.55}.upload{display:flex;align-items:center;justify-content:center;gap:9px;text-align:center;width:100%;min-height:66px;padding:12px;border:1.5px dashed #94a6cd;background:#f7f9ff;border-radius:12px;color:#264aaf;font-size:14px;font-weight:750}.upload.drag-over{border-color:var(--accent);background:#e6ecff}.upload:hover{background:#e9eeff}#fileInput{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}.filename{font-size:12px;color:var(--muted);margin:9px 0 0;overflow-wrap:anywhere;min-height:18px}
+    label.field{display:block;font-size:13px;font-weight:750;margin:12px 0 7px}textarea{width:100%;resize:vertical;min-height:92px;max-height:280px;border:1px solid #b6c3d7;border-radius:10px;padding:11px 12px;color:var(--ink);background:white;line-height:1.55}.field-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px}.field-row label{font-weight:720;font-size:13px}.value{font-size:13px;color:#2449a6;min-width:56px;text-align:right;font-variant-numeric:tabular-nums;font-weight:750}input[type=range]{display:block;width:100%;height:24px;margin:3px 0 4px;accent-color:var(--accent)}.color-line{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:13px}.color-line label{font-size:13px;font-weight:720}input[type=color]{height:38px;width:74px;padding:4px;background:#fff;border:1px solid #a9b7ce;border-radius:10px;cursor:pointer}
+    .preview-area{padding:25px clamp(18px,3vw,48px) 42px;min-width:0;display:flex;flex-direction:column;align-items:center}.preview-top{width:min(100%,720px);display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:16px}.preview-top h2{font-size:19px;margin:0 0 4px}.preview-top p{margin:0;color:var(--muted);font-size:13px}.ratio{border:1px solid var(--line);border-radius:999px;background:#fff;padding:6px 10px;color:var(--muted);font-size:12px;white-space:nowrap;font-weight:750}.canvas-shell{width:min(100%,calc(65vh * var(--ratio-w)/var(--ratio-h)),650px);height:auto;aspect-ratio:var(--ratio-w)/var(--ratio-h);border-radius:17px;overflow:hidden;box-shadow:0 16px 45px rgba(19,33,63,.13);background:#fff;align-self:center;border:1px solid #cad3e5}.canvas-shell canvas{width:100%;height:100%;display:block}.preview-actions{width:min(100%,720px);display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:17px;flex-wrap:wrap}.status{min-height:38px;padding:9px 12px;border:1px solid #b7e0d0;background:var(--good-soft);color:var(--good);border-radius:10px;font-size:13px;flex:1}.status.error{border-color:#f1bec7;background:var(--danger-soft);color:var(--danger)}.btn{border:0;border-radius:10px;padding:11px 17px;font-size:14px;font-weight:800;min-height:44px}.btn-primary{background:var(--accent);color:white}.btn-primary:hover{background:#2444b7}.footer-note{width:min(100%,720px);margin:17px 0 0;font-size:12px;color:var(--muted)}.hint{margin:0;color:var(--muted);font-size:13px}
+    .ratio-selector{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.ratio-button{border:1px solid #b9c5da;border-radius:11px;background:#fff;color:var(--ink);min-height:64px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:1px;padding:8px 4px}.ratio-button strong{font-size:17px;font-variant-numeric:tabular-nums}.ratio-button small{font-size:12px;color:var(--muted)}.ratio-button.active{background:var(--accent-soft);border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.fit-note{padding:9px 10px;border-radius:9px;background:#eef7f3;color:#176247;min-height:38px;margin-top:12px}.fit-note.warning{background:#fff4e4;color:#8b4a11}
+    .template-panel{border-color:#c5d2f1;background:#fafbff}.template-input,.template-select{width:100%;padding:11px 12px;min-height:44px;border:1px solid #aebdd6;background:#fff;color:var(--ink);border-radius:10px}.template-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.template-action{min-height:44px;border:1px solid #acbcdb;color:#263b71;background:#fff;border-radius:10px;padding:9px 8px;font-size:13px;font-weight:750;white-space:normal}.template-action.create{background:#3558d4;color:white;border-color:#3558d4}.template-action.danger{color:#9a2330;border-color:#e7b8bf}.template-message{min-height:38px;margin-top:11px;padding:8px 10px;border:1px solid #bedacb;border-radius:9px;background:#f1faf5;color:#176247;font-size:12px;line-height:1.55;overflow-wrap:anywhere}.template-message.error{background:#fff3f3;color:#9a2330;border-color:#e8b9bf}.template-summary{font-size:12px;color:#33466a;margin:11px 0 0;min-height:20px}.template-small-note{font-size:12px;color:var(--muted);line-height:1.55;margin:8px 0 0}.template-row{margin-top:8px}
+    .json-panel{border-color:#c7d7dc;background:#f9fcfc}.json-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.json-action{min-height:44px;border:1px solid #b5c6d2;border-radius:10px;background:white;color:#263e56;font-size:13px;font-weight:750;padding:9px 8px}.json-action.strong{background:#286b78;border-color:#286b78;color:white}.json-message{margin:11px 0 0;padding:9px 11px;border-radius:9px;background:#eef8f3;border:1px solid #b6ddca;color:#176449;font-size:12px;overflow-wrap:anywhere;min-height:37px}.json-message.error{background:#fff2f3;border-color:#e7b6c0;color:#a12939}.json-info{font-size:12px;color:#415668;margin:9px 0 0;line-height:1.6}
+    @media(max-width:850px){.workspace{grid-template-columns:1fr}.tools{border-right:0;border-bottom:1px solid var(--line);padding:18px}.preview-area{padding:22px 18px 32px}.canvas-shell{width:min(100%,calc(60vh * var(--ratio-w)/var(--ratio-h)),570px)}}@media(max-width:540px){.app-header{min-height:70px;padding:12px 16px}.identity h1{font-size:18px}.panel{padding:14px}.preview-actions{align-items:stretch}.preview-actions .btn{width:100%}.canvas-shell{width:min(100%,calc(57vh * var(--ratio-w)/var(--ratio-h)))}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <header class="app-header"><div class="identity"><div class="logo" aria-hidden="true">C</div><div><h1>짤·카드 스튜디오</h1><p>이미지와 문구를 한 화면에서 편집합니다</p></div></div></header>
+  <main class="workspace">
+    <aside class="tools" aria-label="편집 도구">
+      <div class="tools-heading"><h2>편집 도구</h2><span class="step">실시간 미리보기</span></div>
+      <section class="panel" aria-labelledby="imageTitle">
+        <h3 id="imageTitle"><span class="number">01</span> 배경 이미지</h3>
+        <input id="fileInput" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" aria-label="PNG 또는 JPEG 이미지 선택">
+        <label id="dropZone" for="fileInput" class="upload">이미지 선택 또는 이곳에 드래그</label>
+        <p id="fileName" class="filename">기본 배경은 직접 제작한 그래픽입니다.</p>
+        <p class="minor">PNG, JPG, JPEG / 최대 10MB / 최대 2,000만 픽셀. 원본 파일은 변경하지 않습니다.</p>
+        <div class="field-row"><label for="temperature">색온도</label><output id="temperatureValue" class="value" for="temperature">0</output></div>
+        <input id="temperature" type="range" min="-100" max="100" value="0" step="1" aria-label="배경 이미지 색온도">
+        <p class="minor">왼쪽은 차갑게, 오른쪽은 따뜻하게. 문구의 색상은 유지됩니다.</p>
+      </section>
+      <section class="panel" aria-labelledby="ratioTitle"><h3 id="ratioTitle"><span class="number">02</span> 카드 화면비</h3>
+        <div class="ratio-selector" role="group" aria-label="카드 화면비 선택">
+          <button type="button" class="ratio-button active" data-ratio="1:1" aria-pressed="true"><strong>1:1</strong><small>정사각형</small></button>
+          <button type="button" class="ratio-button" data-ratio="4:5" aria-pressed="false"><strong>4:5</strong><small>세로 카드</small></button>
+          <button type="button" class="ratio-button" data-ratio="9:16" aria-pressed="false"><strong>9:16</strong><small>스토리</small></button>
+        </div>
+        <p class="minor" id="ratioDetail">출력 크기: 1080 × 1080px. 배경은 가운데 기준으로 채워지고 잘립니다.</p>
+      </section>
+      <section class="panel" aria-labelledby="textTitle"><h3 id="textTitle"><span class="number">03</span> 문구 편집</h3>
+        <label for="caption" class="field">표시할 문구</label><textarea id="caption" rows="3" maxlength="1000" spellcheck="false">오늘도 좋은 하루!</textarea>
+        <div class="field-row"><label for="posX">가로 위치</label><output id="posXValue" class="value">50%</output></div><input id="posX" type="range" min="5" max="95" value="50" step="1">
+        <div class="field-row"><label for="posY">세로 위치</label><output id="posYValue" class="value">72%</output></div><input id="posY" type="range" min="5" max="95" value="72" step="1">
+        <div class="field-row"><label for="fontSize">글자 크기</label><output id="fontSizeValue" class="value">78px</output></div><input id="fontSize" type="range" min="24" max="160" value="78" step="2">
+        <div class="color-line"><label for="textColor">글자 색상</label><input id="textColor" type="color" value="#ffffff"></div>
+        <p id="fitNote" class="minor fit-note" role="status" aria-live="polite">문구가 카드 안에 들어가도록 자동 맞춤을 확인합니다.</p>
+        <p class="minor">위치는 이미지 전체를 기준으로 한 비율입니다. 글자가 화면 밖으로 나가지 않도록 가장자리를 보정합니다.</p>
+      </section>
+      <section class="panel template-panel" aria-labelledby="templatesTitle"><h3 id="templatesTitle"><span class="number">04</span> 내 템플릿</h3>
+        <p class="minor">이미지, 문구, 비율, 색상, 위치를 함께 저장합니다. 이 브라우저에만 저장되며 다른 기기와 자동 동기화되지 않습니다.</p>
+        <label class="field" for="templateName">템플릿 이름</label><input id="templateName" class="template-input" type="text" maxlength="60" placeholder="예: 반응형 안내 카드" autocomplete="off">
+        <button id="createTemplateButton" class="template-action create template-row" type="button" style="width:100%">새 템플릿 저장</button>
+        <label class="field" for="templateSelect">저장한 템플릿 선택</label><select id="templateSelect" class="template-select" aria-label="저장된 템플릿 선택"><option value="">저장된 템플릿 없음</option></select>
+        <p id="templateSummary" class="template-summary">저장된 템플릿 0개</p>
+        <div class="template-buttons"><button id="loadTemplateButton" class="template-action" type="button" disabled>불러오기</button><button id="updateTemplateButton" class="template-action" type="button" disabled>수정 저장</button><button id="deleteTemplateButton" class="template-action danger" type="button" disabled>삭제</button></div>
+        <p id="templateMessage" class="template-message" role="status" aria-live="polite">이름을 입력하고 새 템플릿 저장을 누르세요.</p>
+        <p class="template-small-note">이미지는 축소해 저장합니다. 저장소가 부족하면 기존 목록을 지우지 않고 오류를 알립니다. 최대 30개.</p>
+      </section>
+      <section class="panel json-panel" aria-labelledby="jsonTitle"><h3 id="jsonTitle"><span class="number">05</span> 템플릿 백업과 복원</h3>
+        <p class="minor">템플릿 목록 전체를 JSON으로 백업하고 다른 브라우저에서 복원할 수 있습니다.</p>
+        <div class="json-actions"><button id="exportJsonButton" class="json-action" type="button">JSON 백업 저장</button><button id="importJsonButton" class="json-action strong" type="button">JSON 불러오기</button></div>
+        <input id="importJsonFile" type="file" accept=".json,application/json" hidden aria-label="복원할 JSON 파일 선택">
+        <p id="jsonMessage" class="json-message" role="status" aria-live="polite">JSON 복원은 전체 파일 검사 후에만 진행합니다.</p>
+        <p class="json-info">복원 성공 시 현재 템플릿 목록을 교체합니다. 개인 정보가 포함된 이미지와 문구의 JSON은 공유하지 마세요.</p>
+      </section>
+      <p class="hint">긴 문구는 자동으로 크기를 조절합니다. 모두 표시할 수 없는 경우 원문을 보존하고 경고합니다.</p>
+    </aside>
+    <section class="preview-area" aria-labelledby="previewTitle">
+      <div class="preview-top"><div><h2 id="previewTitle">미리보기</h2><p>같은 캔버스 결과를 그대로 PNG로 내려받습니다.</p></div><span class="ratio" id="ratioBadge">1:1 / 1080 × 1080</span></div>
+      <div id="canvasShell" class="canvas-shell" style="--ratio-w:1;--ratio-h:1"><canvas id="previewCanvas" width="1080" height="1080" role="img" aria-label="합성 이미지 미리보기">미리보기를 지원하는 브라우저가 필요합니다.</canvas></div>
+      <div class="preview-actions"><div id="status" class="status" role="status" aria-live="polite">준비 완료. PNG 또는 JPEG 이미지를 선택해 보세요.</div><button id="downloadButton" class="btn btn-primary" type="button">PNG 이미지 저장</button></div>
+      <p class="footer-note">미리보기와 PNG는 동일한 캔버스에서 생성됩니다. 업로드한 이미지의 EXIF, GPS 메타데이터는 PNG로 복사하지 않습니다.</p>
+    </section>
+  </main>
+  <script>
+  (() => {
+    'use strict';
+    const FORMATS = Object.freeze({ '1:1':{width:1080,height:1080}, '4:5':{width:1080,height:1350}, '9:16':{width:1080,height:1920} });
+    const MAX_FILE_BYTES=10*1024*1024, MAX_PIXELS=20_000_000;
+    const TEMPLATE_KEY='t03-card-studio-templates-v1', TEMPLATE_VERSION=1, MAX_TEMPLATES=30, MAX_TEMPLATE_IMAGE_CHARS=1_500_000, MAX_IMPORT_JSON_BYTES=8*1024*1024;
+    const $=id=>document.getElementById(id);
+    const canvas=$('previewCanvas'),ctx=canvas.getContext('2d',{alpha:false});
+    const ui={fileInput:$('fileInput'),fileName:$('fileName'),dropZone:$('dropZone'),temperature:$('temperature'),temperatureValue:$('temperatureValue'),caption:$('caption'),posX:$('posX'),posY:$('posY'),fontSize:$('fontSize'),textColor:$('textColor'),status:$('status'),download:$('downloadButton'),canvasShell:$('canvasShell'),ratioBadge:$('ratioBadge'),ratioDetail:$('ratioDetail'),fitNote:$('fitNote'),templateName:$('templateName'),templateSelect:$('templateSelect'),templateSummary:$('templateSummary'),templateMessage:$('templateMessage'),templateCreate:$('createTemplateButton'),templateLoad:$('loadTemplateButton'),templateUpdate:$('updateTemplateButton'),templateDelete:$('deleteTemplateButton'),exportJson:$('exportJsonButton'),importJson:$('importJsonButton'),importJsonFile:$('importJsonFile'),jsonMessage:$('jsonMessage')};
+    let sourceImage=null,sourceFileName=null,selectedFormat='1:1',temperature=0;
+    let templates=[],templateStorageReady=true,templateBusy=false,jsonBusy=false,exportBusy=false,imageSequence=0,renderQueued=false;
+    const ratioButtons=Array.from(document.querySelectorAll('[data-ratio]'));
+    const status=(msg,error=false)=>{ui.status.textContent=msg;ui.status.classList.toggle('error',error)};
+    const notice=(msg,error=false)=>{ui.templateMessage.textContent=msg;ui.templateMessage.classList.toggle('error',error)};
+    const jsonNotice=(msg,error=false)=>{ui.jsonMessage.textContent=msg;ui.jsonMessage.classList.toggle('error',error)};
+    const renderLater=()=>{if(renderQueued)return;renderQueued=true;requestAnimationFrame(render)};
+    function chooseFormat(key){
+      const f=FORMATS[key];if(!f)return;
+      selectedFormat=key;canvas.width=f.width;canvas.height=f.height;
+      const [w,h]=key.split(':');ui.canvasShell.style.setProperty('--ratio-w',w);ui.canvasShell.style.setProperty('--ratio-h',h);
+      ui.ratioBadge.textContent=`${key} / ${f.width} × ${f.height}`;ui.ratioDetail.textContent=`출력 크기: ${f.width} × ${f.height}px. 배경은 가운데 기준으로 잘라 채웁니다.`;
+      ratioButtons.forEach(b=>{let active=b.dataset.ratio===key;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active))});renderLater();
+    }
+    function drawDemoGraphic(){
+      const W=canvas.width,H=canvas.height,bg=ctx.createLinearGradient(0,0,W,H);
+      bg.addColorStop(0,'#164789');bg.addColorStop(.53,'#575ec3');bg.addColorStop(1,'#df778b');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='rgba(255,255,255,.13)';for(let x=0;x<=W;x+=58)ctx.fillRect(x,0,1,H);for(let y=0;y<=H;y+=58)ctx.fillRect(0,y,W,1);
+      ctx.beginPath();ctx.arc(W*.75,H*.24,W*.26,0,2*Math.PI);ctx.fill();ctx.beginPath();ctx.arc(W*.2,H*.79,W*.21,0,2*Math.PI);ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,.85)';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='700 38px system-ui,sans-serif';ctx.fillText('CARD STUDIO',W/2,H*.19);
+      ctx.fillStyle='rgba(255,255,255,.68)';ctx.font='500 24px system-ui,sans-serif';ctx.fillText('YOUR IMAGE / YOUR WORDS',W/2,H*.24);
+    }
+    function coverImage(img){
+      const W=canvas.width,H=canvas.height,iw=img.naturalWidth,ih=img.naturalHeight;
+      let sx=0,sy=0,sw=iw,sh=ih;
+      if(iw/ih>W/H){sw=ih*W/H;sx=(iw-sw)/2}else{sh=iw*H/W;sy=(ih-sh)/2}
+      ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);ctx.drawImage(img,sx,sy,sw,sh,0,0,W,H);
+    }
+    // AI A의 중간 구현: 색온도는 원본 배경을 새로 그린 뒤, 문구 이전에 적용한다.
+    // 템플릿 및 JSON에 색온도를 저장하는 기능은 AI B에게 남긴다.
+    function applyTemperatureToBackground(){
+      if(!temperature)return;
+      const pixels=ctx.getImageData(0,0,canvas.width,canvas.height),d=pixels.data;
+      const delta=Math.round(temperature*.8);
+      for(let i=0;i<d.length;i+=4){d[i]=Math.max(0,Math.min(255,d[i]+delta));d[i+2]=Math.max(0,Math.min(255,d[i+2]-delta))}
+      ctx.putImageData(pixels,0,0);
+    }
+    const FONT_FAMILY='system-ui,-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+    function graphemes(s){return typeof Intl.Segmenter==='function'?Array.from(new Intl.Segmenter('ko',{granularity:'grapheme'}).segment(s),x=>x.segment):Array.from(s)}
+    function wrapLines(text,maxWidth){
+      const lines=[];for(const p of text.replace(/\r\n?/g,'\n').split('\n')){
+        if(!p){lines.push('');continue}let current='';for(const g of graphemes(p)){
+          if(current&&ctx.measureText(current+g).width>maxWidth){lines.push(current);current=g}else current+=g
+        }lines.push(current)
+      }return lines;
+    }
+    function drawCaption(){
+      const text=ui.caption.value;if(!text){ui.fitNote.textContent='빈 문구. 이미지만 출력합니다.';ui.fitNote.classList.remove('warning');return}
+      const W=canvas.width,H=canvas.height,margin=46,requested=Number(ui.fontSize.value);
+      function layout(size){ctx.font=`800 ${size}px ${FONT_FAMILY}`;const lines=wrapLines(text,W-margin*2);return {size,lines,lineHeight:size*1.24}}
+      const fits=r=>r.lines.length*r.lineHeight<=H-margin*2;
+      let result=layout(requested);
+      if(!fits(result)){let lo=12,hi=requested-1,best=null;while(lo<=hi){const mid=Math.floor((lo+hi)/2),cand=layout(mid);if(fits(cand)){best=cand;lo=mid+1}else hi=mid-1}result=best||layout(12)}
+      let truncated=false;
+      if(!fits(result)){
+        truncated=true;const maxLines=Math.max(1,Math.floor((H-margin*2)/result.lineHeight));result.lines=result.lines.slice(0,maxLines);
+        let letters=graphemes(result.lines[result.lines.length-1].trimEnd());ctx.font=`800 ${result.size}px ${FONT_FAMILY}`;
+        while(letters.length&&ctx.measureText(letters.join('')+'…').width>W-margin*2)letters.pop();result.lines[result.lines.length-1]=letters.join('')+'…';
+      }
+      const {size,lines,lineHeight}=result,allHeight=lines.length*lineHeight,x=W*Number(ui.posX.value)/100,desiredY=H*Number(ui.posY.value)/100;
+      const firstY=Math.max(margin,Math.min(desiredY-allHeight/2,H-margin-allHeight)),hex=ui.textColor.value,rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
+      ctx.font=`800 ${size}px ${FONT_FAMILY}`;ctx.textAlign='left';ctx.textBaseline='top';ctx.lineJoin='round';ctx.strokeStyle=(rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722)<125?'rgba(255,255,255,.75)':'rgba(0,0,0,.68)';ctx.fillStyle=hex;ctx.lineWidth=Math.max(4,size/11);
+      lines.forEach((line,index)=>{const width=ctx.measureText(line).width,safeX=Math.max(margin,Math.min(x-width/2,W-margin-width)),y=firstY+index*lineHeight;ctx.strokeText(line,safeX,y);ctx.fillText(line,safeX,y)});
+      ui.fitNote.classList.toggle('warning',truncated);ui.fitNote.textContent=truncated?`문구가 너무 길어 미리보기에 처음 ${lines.length}줄만 표시했습니다. 원문은 유지됩니다.`:size<requested?`자동 맞춤: ${requested}px에서 ${size}px, ${lines.length}줄`:`문구 전체 표시: ${size}px, ${lines.length}줄`;
+    }
+    function render(){renderQueued=false;ctx.clearRect(0,0,canvas.width,canvas.height);if(sourceImage)coverImage(sourceImage);else drawDemoGraphic();applyTemperatureToBackground();drawCaption()}
+    function syncControls(){for(const id of ['posX','posY','fontSize'])$(id+'Value').textContent=ui[id].value+(id==='fontSize'?'px':'%');renderLater()}
+    function looksLikeImage(bytes){const p=new Uint8Array(bytes);if(p.length>=8&&[137,80,78,71,13,10,26,10].every((b,i)=>p[i]===b))return'image/png';if(p.length>=3&&p[0]===255&&p[1]===216&&p[2]===255)return'image/jpeg';return null}
+    function decodeLocalImage(file,mime){return new Promise((resolve,reject)=>{const url=URL.createObjectURL(new Blob([file],{type:mime})),img=new Image();const done=()=>URL.revokeObjectURL(url);img.onload=()=>{done();if(!img.naturalWidth||!img.naturalHeight||img.naturalWidth*img.naturalHeight>MAX_PIXELS)reject(new Error('이미지 픽셀 수는 2,000만 이하여야 합니다.'));else resolve(img)};img.onerror=()=>{done();reject(new Error('이미지를 열 수 없습니다.'))};img.src=url})}
+    async function handleImage(file){
+      if(!file)return;const seq=++imageSequence;
+      try{
+        if(!/\.(png|jpe?g)$/i.test(file.name))throw new Error('PNG 또는 JPEG 파일만 선택해 주세요.');
+        if(!file.size||file.size>MAX_FILE_BYTES)throw new Error('파일은 0바이트를 초과하고 10MB 이하여야 합니다.');
+        const actual=looksLikeImage(await file.slice(0,16).arrayBuffer());if(seq!==imageSequence)return;
+        if(!actual||(actual==='image/png'&&!/\.png$/i.test(file.name))||(actual==='image/jpeg'&&!/\.jpe?g$/i.test(file.name)))throw new Error('파일 확장자와 실제 이미지 형식이 일치하지 않습니다.');
+        const loaded=await decodeLocalImage(file,actual);if(seq!==imageSequence)return;
+        sourceImage=loaded;sourceFileName=file.name;ui.fileName.textContent=`${file.name} / ${loaded.naturalWidth} × ${loaded.naturalHeight}`;status('이미지 불러오기 완료');renderLater();
+      }catch(e){if(seq!==imageSequence)return;status(`${e.message} 기존 편집 상태는 유지됩니다.`,true)}
+    }
+    function validTemplate(t){
+      return t&&typeof t==='object'&&!Array.isArray(t)&&typeof t.id==='string'&&/^[a-z0-9-]{8,80}$/i.test(t.id)&&typeof t.name==='string'&&t.name.trim().length>0&&t.name.length<=60&&Object.hasOwn(FORMATS,t.ratio)&&typeof t.caption==='string'&&t.caption.length<=1000&&Number.isInteger(t.posX)&&t.posX>=5&&t.posX<=95&&Number.isInteger(t.posY)&&t.posY>=5&&t.posY<=95&&Number.isInteger(t.fontSize)&&t.fontSize>=24&&t.fontSize<=160&&typeof t.color==='string'&&/^#[0-9a-f]{6}$/i.test(t.color)&&(t.imageData===null||(typeof t.imageData==='string'&&t.imageData.length<=MAX_TEMPLATE_IMAGE_CHARS&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(t.imageData)))&&(t.imageName===null||(typeof t.imageName==='string'&&t.imageName.length<=180))&&typeof t.createdAt==='string'&&!Number.isNaN(Date.parse(t.createdAt))&&typeof t.updatedAt==='string'&&!Number.isNaN(Date.parse(t.updatedAt));
+    }
+    function readTemplates(){try{const raw=localStorage.getItem(TEMPLATE_KEY);if(raw===null)return;const parsed=JSON.parse(raw);if(!parsed||parsed.version!==TEMPLATE_VERSION||!Array.isArray(parsed.templates)||parsed.templates.length>MAX_TEMPLATES||parsed.templates.some(t=>!validTemplate(t))||new Set(parsed.templates.map(t=>t.id)).size!==parsed.templates.length)throw new Error('템플릿 데이터 형식이 유효하지 않습니다.');templates=parsed.templates}catch(e){templateStorageReady=false;notice(`저장 데이터를 읽을 수 없습니다: ${e.message} 기존 데이터는 삭제하지 않았습니다.`,true)}}
+    function persistTemplateList(next){if(!templateStorageReady)throw new Error('기존 저장 데이터를 읽을 수 없어 덮어쓰지 않았습니다.');localStorage.setItem(TEMPLATE_KEY,JSON.stringify({version:TEMPLATE_VERSION,templates:next}));templates=next}
+    function renderTemplateList(selectId=ui.templateSelect.value){
+      const select=ui.templateSelect;select.replaceChildren();const placeholder=new Option(templates.length?'템플릿을 선택하세요':'저장된 템플릿 없음','');select.add(placeholder);
+      for(const t of templates)select.add(new Option(`${t.name} / ${t.ratio}${t.imageData?' / 이미지':' / 기본 배경'}`,t.id));
+      select.value=templates.some(t=>t.id===selectId)?selectId:'';ui.templateSummary.textContent=`저장된 템플릿 ${templates.length}개 / 최대 ${MAX_TEMPLATES}개`;
+      const selected=!!templates.find(t=>t.id===select.value);for(const b of [ui.templateLoad,ui.templateUpdate,ui.templateDelete])b.disabled=!selected||templateBusy;
+      ui.templateCreate.disabled=templateBusy||templates.length>=MAX_TEMPLATES||!templateStorageReady;
+    }
+    function formatStoredImage(img){
+      const scale=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight)),w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale)),off=document.createElement('canvas');off.width=w;off.height=h;const c=off.getContext('2d',{alpha:false});c.drawImage(img,0,0,w,h);
+      for(const q of [.85,.75,.6,.45,.3]){const data=off.toDataURL('image/jpeg',q);if(data.length<=MAX_TEMPLATE_IMAGE_CHARS)return data}throw new Error('이미지가 템플릿 저장 한도를 초과했습니다.');
+    }
+    function snapshotTemplate(name,id=(crypto.randomUUID?.()||`t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,12)}`),createdAt=new Date().toISOString()){
+      // 후속 AI B 작업: temperature 속성은 아직 템플릿에 포함하지 않음.
+      const value={id,name,ratio:selectedFormat,caption:ui.caption.value,posX:Number(ui.posX.value),posY:Number(ui.posY.value),fontSize:Number(ui.fontSize.value),color:ui.textColor.value,imageData:sourceImage?formatStoredImage(sourceImage):null,imageName:sourceImage?(sourceFileName||'저장된 이미지').slice(0,180):null,createdAt,updatedAt:new Date().toISOString()};if(!validTemplate(value))throw new Error('템플릿 데이터 검증에 실패했습니다.');return value;
+    }
+    function nameFromField(){const n=ui.templateName.value.trim();if(!n)throw new Error('템플릿 이름을 입력해 주세요.');if(n.length>60)throw new Error('이름은 60자 이하여야 합니다.');return n}
+    function busyTemplates(flag){templateBusy=flag;renderTemplateList(ui.templateSelect.value)}
+    function selectedTemplate(){const t=templates.find(t=>t.id===ui.templateSelect.value);if(!t)throw new Error('먼저 템플릿을 선택해 주세요.');return t}
+    function createTemplate(){try{const name=nameFromField();if(templates.length>=MAX_TEMPLATES)throw new Error('템플릿은 최대 30개입니다.');const item=snapshotTemplate(name);persistTemplateList([...templates,item]);renderTemplateList(item.id);notice(`'${name}' 생성 완료`)}catch(e){notice(`생성 실패: ${e.message}`,true)}}
+    function decodeStoredImage(data){return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('저장된 이미지를 복원할 수 없습니다.'));img.src=data})}
+    async function loadTemplate(){if(templateBusy)return;let item;try{item=selectedTemplate()}catch(e){notice(e.message,true);return}const seq=++imageSequence;busyTemplates(true);try{
+      const loaded=item.imageData?await decodeStoredImage(item.imageData):null;if(seq!==imageSequence)return;
+      if(loaded&&(!loaded.naturalWidth||!loaded.naturalHeight))throw new Error('이미지가 손상되었습니다.');
+      sourceImage=loaded;sourceFileName=item.imageName;ui.fileName.textContent=loaded?`${item.imageName||'저장된 이미지'} / 템플릿에서 복원됨`:'기본 배경은 직접 제작한 그래픽입니다.';
+      ui.caption.value=item.caption;ui.posX.value=String(item.posX);ui.posY.value=String(item.posY);ui.fontSize.value=String(item.fontSize);ui.textColor.value=item.color;ui.templateName.value=item.name;
+      chooseFormat(item.ratio);syncControls();notice(`'${item.name}' 불러오기 완료`);status(`템플릿 '${item.name}' 불러오기 완료`);
+      // 후속 AI B 작업: 색온도 복원 미구현.
+    }catch(e){notice(`불러오기 실패: ${e.message}. 현재 편집 유지.`,true)}finally{busyTemplates(false)}}
+    function updateTemplate(){try{const old=selectedTemplate(),name=nameFromField(),value=snapshotTemplate(name,old.id,old.createdAt);persistTemplateList(templates.map(t=>t.id===old.id?value:t));renderTemplateList(old.id);notice(`'${name}' 수정 저장 완료`)}catch(e){notice(`수정 실패: ${e.message}`,true)}}
+    function deleteTemplate(){try{const target=selectedTemplate();if(!confirm(`'${target.name}' 템플릿을 삭제할까요?`))return;persistTemplateList(templates.filter(t=>t.id!==target.id));renderTemplateList('');ui.templateName.value='';notice(`'${target.name}' 삭제 완료`)}catch(e){notice(`삭제 실패: ${e.message}`,true)}}
+    function safeTemplatesFromJson(raw){const obj=JSON.parse(raw);if(!obj||typeof obj!=='object'||Array.isArray(obj)||obj.version!==TEMPLATE_VERSION||!Array.isArray(obj.templates)||obj.templates.length>MAX_TEMPLATES)throw new Error('지원하지 않는 JSON 형식입니다.');if(obj.templates.some(t=>!validTemplate(t)))throw new Error('필수 항목 누락 또는 값 오류');if(new Set(obj.templates.map(t=>t.id)).size!==obj.templates.length)throw new Error('중복 템플릿 ID');return obj.templates.map(t=>({id:t.id,name:t.name,ratio:t.ratio,caption:t.caption,posX:t.posX,posY:t.posY,fontSize:t.fontSize,color:t.color,imageData:t.imageData,imageName:t.imageName,createdAt:t.createdAt,updatedAt:t.updatedAt}))}
+    async function sanitizeImportedTemplates(items){const safe=[];for(const item of items){const image=item.imageData?await decodeStoredImage(item.imageData):null;if(image&&(!image.naturalWidth||!image.naturalHeight||image.naturalWidth*image.naturalHeight>MAX_PIXELS))throw new Error('이미지 크기가 유효하지 않습니다.');const sanitized={...item,imageData:image?formatStoredImage(image):null};if(!validTemplate(sanitized))throw new Error('이미지 검증에 실패했습니다.');safe.push(sanitized)}return safe}
+    function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
+    function exportTemplatesJson(){if(jsonBusy)return;try{downloadBlob(new Blob([JSON.stringify({version:TEMPLATE_VERSION,templates},null,2)],{type:'application/json;charset=utf-8'}),'card-studio-templates.json');jsonNotice(`JSON 백업 저장: 템플릿 ${templates.length}개`)}catch(e){jsonNotice(`백업 실패: ${e.message}`,true)}}
+    async function importTemplatesJson(file){if(!file||jsonBusy)return;jsonBusy=true;ui.importJson.disabled=true;ui.exportJson.disabled=true;busyTemplates(true);try{
+      if(!/\.json$/i.test(file.name))throw new Error('.json 파일만 허용합니다.');if(!file.size||file.size>MAX_IMPORT_JSON_BYTES)throw new Error('JSON은 8MB 이하여야 합니다.');
+      const items=await sanitizeImportedTemplates(safeTemplatesFromJson(await file.text()));if(!confirm(`유효한 템플릿 ${items.length}개로 현재 목록을 교체할까요?`)){jsonNotice('복원을 취소했습니다.');return}
+      persistTemplateList(items);renderTemplateList('');ui.templateName.value='';jsonNotice(`복원 성공: 템플릿 ${items.length}개`);notice('JSON 복원 완료');
+    }catch(e){jsonNotice(`JSON 가져오기 거부: ${e instanceof SyntaxError?'JSON 문법 오류':e.message}. 기존 템플릿은 유지됩니다.`,true)}finally{jsonBusy=false;ui.importJson.disabled=false;ui.exportJson.disabled=false;busyTemplates(false)}}
+    ui.temperature.addEventListener('input',()=>{temperature=Number(ui.temperature.value);ui.temperatureValue.textContent=(temperature>0?'+':'')+temperature;renderLater()});
+    ui.fileInput.addEventListener('change',()=>{void handleImage(ui.fileInput.files?.[0]);ui.fileInput.value=''});
+    for(const eventName of ['dragenter','dragover'])ui.dropZone.addEventListener(eventName,e=>{e.preventDefault();ui.dropZone.classList.add('drag-over')});
+    for(const eventName of ['dragleave','dragend'])ui.dropZone.addEventListener(eventName,e=>{e.preventDefault();ui.dropZone.classList.remove('drag-over')});
+    ui.dropZone.addEventListener('drop',e=>{e.preventDefault();ui.dropZone.classList.remove('drag-over');if(e.dataTransfer?.files?.[0])void handleImage(e.dataTransfer.files[0])});
+    for(const id of ['caption','posX','posY','fontSize','textColor'])ui[id].addEventListener('input',syncControls);
+    ratioButtons.forEach(b=>b.addEventListener('click',()=>chooseFormat(b.dataset.ratio)));
+    ui.download.addEventListener('click',async()=>{if(exportBusy)return;exportBusy=true;ui.download.disabled=true;try{
+      // 마지막 입력 이후의 최신 상태를 반드시 PNG로 저장한다.
+      if(renderQueued)render();const key=selectedFormat;
+      const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('PNG 변환 실패')),'image/png'));
+      downloadBlob(blob,`card-studio-${key.replace(':','x')}.png`);status('PNG 이미지 저장 완료');
+    }catch(e){status(`PNG 저장 실패: ${e.message}`,true)}finally{exportBusy=false;ui.download.disabled=false}});
+    ui.exportJson.addEventListener('click',exportTemplatesJson);ui.importJson.addEventListener('click',()=>{if(!jsonBusy)ui.importJsonFile.click()});
+    ui.importJsonFile.addEventListener('change',()=>{const file=ui.importJsonFile.files?.[0];ui.importJsonFile.value='';if(file)void importTemplatesJson(file)});
+    ui.templateCreate.addEventListener('click',createTemplate);ui.templateLoad.addEventListener('click',()=>void loadTemplate());ui.templateUpdate.addEventListener('click',updateTemplate);ui.templateDelete.addEventListener('click',deleteTemplate);
+    ui.templateSelect.addEventListener('change',()=>{const t=templates.find(t=>t.id===ui.templateSelect.value);if(t)ui.templateName.value=t.name;renderTemplateList(ui.templateSelect.value)});
+    readTemplates();renderTemplateList();syncControls();chooseFormat('1:1');
+  })();
+  </script>
+</body>
+</html>
