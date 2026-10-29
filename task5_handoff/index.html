@@ -53,7 +53,7 @@
         <p class="minor">위치는 이미지 전체를 기준으로 한 비율입니다. 글자가 화면 밖으로 나가지 않도록 가장자리를 보정합니다.</p>
       </section>
       <section class="panel template-panel" aria-labelledby="templatesTitle"><h3 id="templatesTitle"><span class="number">04</span> 내 템플릿</h3>
-        <p class="minor">이미지, 문구, 비율, 색상, 위치를 함께 저장합니다. 이 브라우저에만 저장되며 다른 기기와 자동 동기화되지 않습니다.</p>
+        <p class="minor">이미지, 문구, 비율, 색상, 위치, 색온도를 함께 저장합니다. 이 브라우저에만 저장되며 다른 기기와 자동 동기화되지 않습니다.</p>
         <label class="field" for="templateName">템플릿 이름</label><input id="templateName" class="template-input" type="text" maxlength="60" placeholder="예: 반응형 안내 카드" autocomplete="off">
         <button id="createTemplateButton" class="template-action create template-row" type="button" style="width:100%">새 템플릿 저장</button>
         <label class="field" for="templateSelect">저장한 템플릿 선택</label><select id="templateSelect" class="template-select" aria-label="저장된 템플릿 선택"><option value="">저장된 템플릿 없음</option></select>
@@ -115,8 +115,10 @@
       if(iw/ih>W/H){sw=ih*W/H;sx=(iw-sw)/2}else{sh=iw*H/W;sy=(ih-sh)/2}
       ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);ctx.drawImage(img,sx,sy,sw,sh,0,0,W,H);
     }
-    // AI A의 중간 구현: 색온도는 원본 배경을 새로 그린 뒤, 문구 이전에 적용한다.
-    // 템플릿 및 JSON에 색온도를 저장하는 기능은 AI B에게 남긴다.
+    // 색온도는 매번 원본 배경을 새로 그린 뒤 문구 이전에 적용한다(누적 적용 없음).
+    const validTemperature=v=>Number.isInteger(v)&&v>=-100&&v<=100;
+    const temperatureLabel=v=>(v>0?'+':'')+v;
+    function setTemperature(v){temperature=validTemperature(v)?v:0;ui.temperature.value=String(temperature);ui.temperatureValue.textContent=temperatureLabel(temperature);renderLater()}
     function applyTemperatureToBackground(){
       if(!temperature)return;
       const pixels=ctx.getImageData(0,0,canvas.width,canvas.height),d=pixels.data;
@@ -168,13 +170,13 @@
       }catch(e){if(seq!==imageSequence)return;status(`${e.message} 기존 편집 상태는 유지됩니다.`,true)}
     }
     function validTemplate(t){
-      return t&&typeof t==='object'&&!Array.isArray(t)&&typeof t.id==='string'&&/^[a-z0-9-]{8,80}$/i.test(t.id)&&typeof t.name==='string'&&t.name.trim().length>0&&t.name.length<=60&&Object.hasOwn(FORMATS,t.ratio)&&typeof t.caption==='string'&&t.caption.length<=1000&&Number.isInteger(t.posX)&&t.posX>=5&&t.posX<=95&&Number.isInteger(t.posY)&&t.posY>=5&&t.posY<=95&&Number.isInteger(t.fontSize)&&t.fontSize>=24&&t.fontSize<=160&&typeof t.color==='string'&&/^#[0-9a-f]{6}$/i.test(t.color)&&(t.imageData===null||(typeof t.imageData==='string'&&t.imageData.length<=MAX_TEMPLATE_IMAGE_CHARS&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(t.imageData)))&&(t.imageName===null||(typeof t.imageName==='string'&&t.imageName.length<=180))&&typeof t.createdAt==='string'&&!Number.isNaN(Date.parse(t.createdAt))&&typeof t.updatedAt==='string'&&!Number.isNaN(Date.parse(t.updatedAt));
+      return t&&typeof t==='object'&&!Array.isArray(t)&&typeof t.id==='string'&&/^[a-z0-9-]{8,80}$/i.test(t.id)&&typeof t.name==='string'&&t.name.trim().length>0&&t.name.length<=60&&Object.hasOwn(FORMATS,t.ratio)&&typeof t.caption==='string'&&t.caption.length<=1000&&Number.isInteger(t.posX)&&t.posX>=5&&t.posX<=95&&Number.isInteger(t.posY)&&t.posY>=5&&t.posY<=95&&Number.isInteger(t.fontSize)&&t.fontSize>=24&&t.fontSize<=160&&typeof t.color==='string'&&/^#[0-9a-f]{6}$/i.test(t.color)&&(t.imageData===null||(typeof t.imageData==='string'&&t.imageData.length<=MAX_TEMPLATE_IMAGE_CHARS&&/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(t.imageData)))&&(t.imageName===null||(typeof t.imageName==='string'&&t.imageName.length<=180))&&(t.temperature===undefined||validTemperature(t.temperature))&&typeof t.createdAt==='string'&&!Number.isNaN(Date.parse(t.createdAt))&&typeof t.updatedAt==='string'&&!Number.isNaN(Date.parse(t.updatedAt));
     }
     function readTemplates(){try{const raw=localStorage.getItem(TEMPLATE_KEY);if(raw===null)return;const parsed=JSON.parse(raw);if(!parsed||parsed.version!==TEMPLATE_VERSION||!Array.isArray(parsed.templates)||parsed.templates.length>MAX_TEMPLATES||parsed.templates.some(t=>!validTemplate(t))||new Set(parsed.templates.map(t=>t.id)).size!==parsed.templates.length)throw new Error('템플릿 데이터 형식이 유효하지 않습니다.');templates=parsed.templates}catch(e){templateStorageReady=false;notice(`저장 데이터를 읽을 수 없습니다: ${e.message} 기존 데이터는 삭제하지 않았습니다.`,true)}}
     function persistTemplateList(next){if(!templateStorageReady)throw new Error('기존 저장 데이터를 읽을 수 없어 덮어쓰지 않았습니다.');localStorage.setItem(TEMPLATE_KEY,JSON.stringify({version:TEMPLATE_VERSION,templates:next}));templates=next}
     function renderTemplateList(selectId=ui.templateSelect.value){
       const select=ui.templateSelect;select.replaceChildren();const placeholder=new Option(templates.length?'템플릿을 선택하세요':'저장된 템플릿 없음','');select.add(placeholder);
-      for(const t of templates)select.add(new Option(`${t.name} / ${t.ratio}${t.imageData?' / 이미지':' / 기본 배경'}`,t.id));
+      for(const t of templates)select.add(new Option(`${t.name} / ${t.ratio}${t.imageData?' / 이미지':' / 기본 배경'}${t.temperature?` / 색온도 ${temperatureLabel(t.temperature)}`:''}`,t.id));
       select.value=templates.some(t=>t.id===selectId)?selectId:'';ui.templateSummary.textContent=`저장된 템플릿 ${templates.length}개 / 최대 ${MAX_TEMPLATES}개`;
       const selected=!!templates.find(t=>t.id===select.value);for(const b of [ui.templateLoad,ui.templateUpdate,ui.templateDelete])b.disabled=!selected||templateBusy;
       ui.templateCreate.disabled=templateBusy||templates.length>=MAX_TEMPLATES||!templateStorageReady;
@@ -184,8 +186,8 @@
       for(const q of [.85,.75,.6,.45,.3]){const data=off.toDataURL('image/jpeg',q);if(data.length<=MAX_TEMPLATE_IMAGE_CHARS)return data}throw new Error('이미지가 템플릿 저장 한도를 초과했습니다.');
     }
     function snapshotTemplate(name,id=(crypto.randomUUID?.()||`t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,12)}`),createdAt=new Date().toISOString()){
-      // 후속 AI B 작업: temperature 속성은 아직 템플릿에 포함하지 않음.
-      const value={id,name,ratio:selectedFormat,caption:ui.caption.value,posX:Number(ui.posX.value),posY:Number(ui.posY.value),fontSize:Number(ui.fontSize.value),color:ui.textColor.value,imageData:sourceImage?formatStoredImage(sourceImage):null,imageName:sourceImage?(sourceFileName||'저장된 이미지').slice(0,180):null,createdAt,updatedAt:new Date().toISOString()};if(!validTemplate(value))throw new Error('템플릿 데이터 검증에 실패했습니다.');return value;
+      // 색온도는 원본 이미지와 별도 값으로 저장한다(보정된 픽셀을 저장하지 않아 이중 적용이 없음).
+      const value={id,name,ratio:selectedFormat,caption:ui.caption.value,posX:Number(ui.posX.value),posY:Number(ui.posY.value),fontSize:Number(ui.fontSize.value),color:ui.textColor.value,temperature,imageData:sourceImage?formatStoredImage(sourceImage):null,imageName:sourceImage?(sourceFileName||'저장된 이미지').slice(0,180):null,createdAt,updatedAt:new Date().toISOString()};if(!validTemplate(value))throw new Error('템플릿 데이터 검증에 실패했습니다.');return value;
     }
     function nameFromField(){const n=ui.templateName.value.trim();if(!n)throw new Error('템플릿 이름을 입력해 주세요.');if(n.length>60)throw new Error('이름은 60자 이하여야 합니다.');return n}
     function busyTemplates(flag){templateBusy=flag;renderTemplateList(ui.templateSelect.value)}
@@ -197,21 +199,21 @@
       if(loaded&&(!loaded.naturalWidth||!loaded.naturalHeight))throw new Error('이미지가 손상되었습니다.');
       sourceImage=loaded;sourceFileName=item.imageName;ui.fileName.textContent=loaded?`${item.imageName||'저장된 이미지'} / 템플릿에서 복원됨`:'기본 배경은 직접 제작한 그래픽입니다.';
       ui.caption.value=item.caption;ui.posX.value=String(item.posX);ui.posY.value=String(item.posY);ui.fontSize.value=String(item.fontSize);ui.textColor.value=item.color;ui.templateName.value=item.name;
-      chooseFormat(item.ratio);syncControls();notice(`'${item.name}' 불러오기 완료`);status(`템플릿 '${item.name}' 불러오기 완료`);
-      // 후속 AI B 작업: 색온도 복원 미구현.
+      setTemperature(item.temperature??0); // 색온도가 없는 기존 version:1 템플릿은 원본(0)으로 불러온다.
+      chooseFormat(item.ratio);syncControls();notice(`'${item.name}' 불러오기 완료`);status(`템플릿 '${item.name}' 불러오기 완료 / 색온도 ${temperatureLabel(temperature)}`);
     }catch(e){notice(`불러오기 실패: ${e.message}. 현재 편집 유지.`,true)}finally{busyTemplates(false)}}
     function updateTemplate(){try{const old=selectedTemplate(),name=nameFromField(),value=snapshotTemplate(name,old.id,old.createdAt);persistTemplateList(templates.map(t=>t.id===old.id?value:t));renderTemplateList(old.id);notice(`'${name}' 수정 저장 완료`)}catch(e){notice(`수정 실패: ${e.message}`,true)}}
     function deleteTemplate(){try{const target=selectedTemplate();if(!confirm(`'${target.name}' 템플릿을 삭제할까요?`))return;persistTemplateList(templates.filter(t=>t.id!==target.id));renderTemplateList('');ui.templateName.value='';notice(`'${target.name}' 삭제 완료`)}catch(e){notice(`삭제 실패: ${e.message}`,true)}}
-    function safeTemplatesFromJson(raw){const obj=JSON.parse(raw);if(!obj||typeof obj!=='object'||Array.isArray(obj)||obj.version!==TEMPLATE_VERSION||!Array.isArray(obj.templates)||obj.templates.length>MAX_TEMPLATES)throw new Error('지원하지 않는 JSON 형식입니다.');if(obj.templates.some(t=>!validTemplate(t)))throw new Error('필수 항목 누락 또는 값 오류');if(new Set(obj.templates.map(t=>t.id)).size!==obj.templates.length)throw new Error('중복 템플릿 ID');return obj.templates.map(t=>({id:t.id,name:t.name,ratio:t.ratio,caption:t.caption,posX:t.posX,posY:t.posY,fontSize:t.fontSize,color:t.color,imageData:t.imageData,imageName:t.imageName,createdAt:t.createdAt,updatedAt:t.updatedAt}))}
+    function safeTemplatesFromJson(raw){const obj=JSON.parse(raw);if(!obj||typeof obj!=='object'||Array.isArray(obj)||obj.version!==TEMPLATE_VERSION||!Array.isArray(obj.templates)||obj.templates.length>MAX_TEMPLATES)throw new Error('지원하지 않는 JSON 형식입니다.');if(obj.templates.some(t=>!validTemplate(t)))throw new Error('필수 항목 누락 또는 값 오류');if(new Set(obj.templates.map(t=>t.id)).size!==obj.templates.length)throw new Error('중복 템플릿 ID');return obj.templates.map(t=>({id:t.id,name:t.name,ratio:t.ratio,caption:t.caption,posX:t.posX,posY:t.posY,fontSize:t.fontSize,color:t.color,temperature:t.temperature??0,imageData:t.imageData,imageName:t.imageName,createdAt:t.createdAt,updatedAt:t.updatedAt}))}
     async function sanitizeImportedTemplates(items){const safe=[];for(const item of items){const image=item.imageData?await decodeStoredImage(item.imageData):null;if(image&&(!image.naturalWidth||!image.naturalHeight||image.naturalWidth*image.naturalHeight>MAX_PIXELS))throw new Error('이미지 크기가 유효하지 않습니다.');const sanitized={...item,imageData:image?formatStoredImage(image):null};if(!validTemplate(sanitized))throw new Error('이미지 검증에 실패했습니다.');safe.push(sanitized)}return safe}
     function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
-    function exportTemplatesJson(){if(jsonBusy)return;try{downloadBlob(new Blob([JSON.stringify({version:TEMPLATE_VERSION,templates},null,2)],{type:'application/json;charset=utf-8'}),'card-studio-templates.json');jsonNotice(`JSON 백업 저장: 템플릿 ${templates.length}개`)}catch(e){jsonNotice(`백업 실패: ${e.message}`,true)}}
+    function exportTemplatesJson(){if(jsonBusy)return;try{downloadBlob(new Blob([JSON.stringify({version:TEMPLATE_VERSION,templates:templates.map(t=>({...t,temperature:t.temperature??0}))},null,2)],{type:'application/json;charset=utf-8'}),'card-studio-templates.json');jsonNotice(`JSON 백업 저장: 템플릿 ${templates.length}개`)}catch(e){jsonNotice(`백업 실패: ${e.message}`,true)}}
     async function importTemplatesJson(file){if(!file||jsonBusy)return;jsonBusy=true;ui.importJson.disabled=true;ui.exportJson.disabled=true;busyTemplates(true);try{
       if(!/\.json$/i.test(file.name))throw new Error('.json 파일만 허용합니다.');if(!file.size||file.size>MAX_IMPORT_JSON_BYTES)throw new Error('JSON은 8MB 이하여야 합니다.');
       const items=await sanitizeImportedTemplates(safeTemplatesFromJson(await file.text()));if(!confirm(`유효한 템플릿 ${items.length}개로 현재 목록을 교체할까요?`)){jsonNotice('복원을 취소했습니다.');return}
       persistTemplateList(items);renderTemplateList('');ui.templateName.value='';jsonNotice(`복원 성공: 템플릿 ${items.length}개`);notice('JSON 복원 완료');
     }catch(e){jsonNotice(`JSON 가져오기 거부: ${e instanceof SyntaxError?'JSON 문법 오류':e.message}. 기존 템플릿은 유지됩니다.`,true)}finally{jsonBusy=false;ui.importJson.disabled=false;ui.exportJson.disabled=false;busyTemplates(false)}}
-    ui.temperature.addEventListener('input',()=>{temperature=Number(ui.temperature.value);ui.temperatureValue.textContent=(temperature>0?'+':'')+temperature;renderLater()});
+    ui.temperature.addEventListener('input',()=>setTemperature(Number(ui.temperature.value)));
     ui.fileInput.addEventListener('change',()=>{void handleImage(ui.fileInput.files?.[0]);ui.fileInput.value=''});
     for(const eventName of ['dragenter','dragover'])ui.dropZone.addEventListener(eventName,e=>{e.preventDefault();ui.dropZone.classList.add('drag-over')});
     for(const eventName of ['dragleave','dragend'])ui.dropZone.addEventListener(eventName,e=>{e.preventDefault();ui.dropZone.classList.remove('drag-over')});
