@@ -257,3 +257,6 @@ p, .memo, .blocker, .hint, .callout p, .desc, .sort-note { text-wrap: pretty; }
   .col-left, .col-right { display: contents; }
   #plan-section { order: 1; } #todo-section { order: 2; } #exec-section { order: 3; } #review-section { order: 4; }
 }
+
+/* 예상보다 실제가 길면 막대를 경고색으로 */
+.bar.over > span { background: var(--bad); }

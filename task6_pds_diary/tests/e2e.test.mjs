@@ -329,6 +329,35 @@ test('UI: 모바일 폭 한 열·가로 스크롤 없음', async () => {
   await page.setViewportSize({ width: 1280, height: 900 });
 });
 
+test('회고 시간 비율: 표시는 실제 비율(100% 초과 포함), 막대 너비만 100% 제한, 예상 0이면 0%', async () => {
+  const rpc = (fn, body) => page.evaluate(async ([fn, body]) => {
+    const c = window.PDS_CONFIG;
+    const r = await fetch(`${c.supabaseUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: c.publishableKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return r.json();
+  }, [fn, body]);
+  const mkPlan = (title) => rpc('pds_create_plan', { p_title: title, p_description: '', p_start_date: T, p_end_date: addDays(T, 3), p_priority: 2, p_success_criteria: '합성', p_estimated_minutes: 100 });
+  const mkTodo = (plan, est) => rpc('pds_create_todo', { p_plan_id: plan, p_title: '[합성] 할 일', p_memo: '', p_due_date: addDays(T, 1), p_priority: 2, p_tags: [], p_estimated_minutes: est });
+  const exec = (todo, m) => rpc('pds_add_execution', { p_todo_id: todo, p_started_at: `${T}T09:00:00+09:00`, p_ended_at: `${T}T11:00:00+09:00`, p_actual_minutes: m });
+  const over = await mkPlan('[합성] 초과'); await exec(await mkTodo(over, 60), 90);       // 150%
+  const normal = await mkPlan('[합성] 일반'); await exec(await mkTodo(normal, 120), 60);  // 50%
+  const empty = await mkPlan('[합성] 빈 계획');                                            // 예상 0 → 0%
+  const check = async (plan) => {
+    const p2 = await ctx.newPage();
+    await p2.goto(`${srv.url}#plan=${plan}`);
+    await p2.waitForFunction(() => /불러옴/.test(document.querySelector('#status').textContent));
+    const out = await p2.evaluate(() => {
+      const bar = document.querySelector('.subpanel.time .bar');
+      return { note: document.querySelector('[data-field=time-pct]').textContent, aria: bar.getAttribute('aria-label'),
+        width: bar.firstElementChild.style.width, over: bar.classList.contains('over') };
+    });
+    await p2.close();
+    return out;
+  };
+  assert.deepEqual(await check(over), { note: '예상 대비 실제 150%', aria: '예상 대비 실제 150%', width: '100%', over: true });
+  assert.deepEqual(await check(normal), { note: '예상 대비 실제 50%', aria: '예상 대비 실제 50%', width: '50%', over: false });
+  assert.deepEqual(await check(empty), { note: '예상 대비 실제 0%', aria: '예상 대비 실제 0%', width: '0%', over: false });
+});
+
 test('콘솔 오류 없음(의도한 400 응답 제외)', async () => {
   const unexpected = consoleErrors.filter((e) => !/status of 400/.test(e));
   assert.deepEqual(unexpected, []);

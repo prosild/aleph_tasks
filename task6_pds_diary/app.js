@@ -393,7 +393,8 @@
       h('span', { class: 'num' }, value), h('span', { class: 'lbl' }, label));
     const todoEv = (label, ids) => () => showTodoEvidence(label, ids);
     const pct = s.planned_count ? Math.round((s.done_count / s.planned_count) * 100) : 0;
-    const timePct = s.estimated_minutes ? Math.min(100, Math.round((s.actual_minutes / s.estimated_minutes) * 100)) : 0;
+    // 표시 비율은 실제 값 그대로(100% 초과 가능), 막대 너비만 100%로 제한한다. 예상 0분이면 0%.
+    const timePct = s.estimated_minutes ? Math.round((s.actual_minutes / s.estimated_minutes) * 100) : 0;
     box.append(
       h('div', { class: 'subpanel progress' },
         h('div', { class: 'subpanel-head' }, h('h3', {}, '진행'), h('span', { class: 'subpanel-note' }, `완료율 ${pct}%`)),
@@ -404,8 +405,8 @@
           card('overdue', '지연 수', s.overdue_count, todoEv('지연 수', s.overdue_todo_ids)),
           card('blocked', '막힘 수', s.blocked_count, todoEv('막힘 수', s.blocked_todo_ids)))),
       h('div', { class: 'subpanel time' },
-        h('div', { class: 'subpanel-head' }, h('h3', {}, '시간'), h('span', { class: 'subpanel-note' }, `예상 대비 실제 ${timePct}%`)),
-        h('div', { class: 'bar', role: 'img', 'aria-label': `예상 대비 실제 ${timePct}%` }, barFill(timePct)),
+        h('div', { class: 'subpanel-head' }, h('h3', {}, '시간'), h('span', { class: 'subpanel-note', 'data-field': 'time-pct' }, `예상 대비 실제 ${timePct}%`)),
+        h('div', { class: `bar${timePct > 100 ? ' over' : ''}`, role: 'img', 'aria-label': `예상 대비 실제 ${timePct}%` }, barFill(Math.min(100, timePct))),
         h('div', { class: 'stat-grid three' },
           card('estimated', '예상 시간', min(s.estimated_minutes), todoEv('예상 시간(할 일 예상 합계)', s.planned_todo_ids)),
           card('actual', '실제 시간', min(s.actual_minutes), () => showExecEvidence('실제 시간(실행 기록 합계)', s.execution_ids)),
