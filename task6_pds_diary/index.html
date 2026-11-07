@@ -9,129 +9,146 @@
 </head>
 <body>
   <header class="top">
-    <h1>Plan-Do-See 다이어리</h1>
-    <p class="notice" id="public-notice" role="note">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</p>
-    <div class="toolbar">
-      <span id="status" class="status" role="status" aria-live="polite">불러오는 중…</span>
-      <button type="button" id="reload-btn">새로고침</button>
-      <button type="button" id="export-btn">전체 데이터 내보내기(JSON)</button>
+    <div class="top-row">
+      <h1>Plan-Do-See 다이어리</h1>
+      <div class="toolbar">
+        <button type="button" id="reload-btn">새로고침</button>
+        <button type="button" id="export-btn">전체 데이터 내보내기(JSON)</button>
+      </div>
     </div>
+    <p class="notice" id="public-notice" role="note">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</p>
+    <p id="status" class="status" role="status" aria-live="polite">불러오는 중…</p>
   </header>
 
-  <main>
-    <!-- PLAN -->
-    <section id="plan-section" class="card">
-      <h2>1. 계획 (Plan)</h2>
-      <div class="row">
-        <label>계획 선택
+  <main class="layout">
+    <div class="col-left">
+      <!-- PLAN -->
+      <section id="plan-section" class="card">
+        <div class="section-head">
+          <h2>계획 (Plan)</h2>
+          <button type="button" id="new-plan-btn">새 계획 등록</button>
+        </div>
+        <label class="plan-select-label">계획 선택
           <select id="plan-select"></select>
         </label>
-        <button type="button" id="new-plan-btn">새 계획 등록</button>
-      </div>
-      <div id="plan-detail"></div>
+        <div id="plan-detail"></div>
 
-      <form id="plan-form" class="form hidden" autocomplete="off">
-        <h3 id="plan-form-title">새 계획 등록</h3>
-        <p id="plan-form-improvement" class="improvement hidden"></p>
-        <label>제목 <input name="title" required maxlength="120"></label>
-        <label>설명 <textarea name="description" maxlength="2000" rows="2"></textarea></label>
-        <div class="grid3">
-          <label>시작일 <input name="start_date" type="date" required></label>
-          <label>종료일 <input name="end_date" type="date" required></label>
-          <label>우선순위
-            <select name="priority"><option value="1">1 높음</option><option value="2" selected>2 보통</option><option value="3">3 낮음</option></select>
-          </label>
-        </div>
-        <label>성공 기준 <textarea name="success_criteria" required maxlength="1000" rows="2"></textarea></label>
-        <label>예상 시간(분) <input name="estimated_minutes" type="number" min="1" max="100000" step="1" required></label>
-        <label class="edit-only">수정 사유 <input name="change_note" maxlength="500" placeholder="예: 범위 조정"></label>
-        <div class="row">
-          <button type="submit" class="primary">저장</button>
-          <button type="button" data-cancel>취소</button>
-        </div>
-      </form>
-
-      <details id="revisions" class="revisions">
-        <summary>수정 이력 (최초 계획 보존)</summary>
-        <div id="revision-list"></div>
-      </details>
-    </section>
-
-    <!-- TODO -->
-    <section id="todo-section" class="card">
-      <h2>2. 할 일</h2>
-      <form id="todo-form" class="form" autocomplete="off">
-        <h3 id="todo-form-title">할 일 추가</h3>
-        <label>제목 <input name="title" required maxlength="200"></label>
-        <label>메모 <input name="memo" maxlength="2000"></label>
-        <div class="grid4">
-          <label>마감일 <input name="due_date" type="date" required></label>
-          <label>우선순위
-            <select name="priority"><option value="1">1 높음</option><option value="2" selected>2 보통</option><option value="3">3 낮음</option></select>
-          </label>
-          <label>태그(쉼표 구분) <input name="tags" maxlength="400" placeholder="예: mlops, 보안"></label>
+        <form id="plan-form" class="form hidden" autocomplete="off">
+          <h3 id="plan-form-title">새 계획 등록</h3>
+          <p id="plan-form-improvement" class="improvement hidden"></p>
+          <label>제목 <input name="title" required maxlength="120"></label>
+          <label>설명 <textarea name="description" maxlength="2000" rows="2"></textarea></label>
+          <div class="grid3">
+            <label>시작일 <input name="start_date" type="date" required></label>
+            <label>종료일 <input name="end_date" type="date" required></label>
+            <label>우선순위
+              <select name="priority"><option value="1">1 높음</option><option value="2" selected>2 보통</option><option value="3">3 낮음</option></select>
+            </label>
+          </div>
+          <label>성공 기준 <textarea name="success_criteria" required maxlength="1000" rows="2"></textarea></label>
           <label>예상 시간(분) <input name="estimated_minutes" type="number" min="1" max="100000" step="1" required></label>
-        </div>
-        <div class="row">
-          <button type="submit" class="primary">저장</button>
-          <button type="button" data-cancel class="hidden">수정 취소</button>
-        </div>
-      </form>
+          <label class="edit-only">수정 사유 <input name="change_note" maxlength="500" placeholder="예: 범위 조정"></label>
+          <div class="row">
+            <button type="submit" class="primary">저장</button>
+            <button type="button" data-cancel>취소</button>
+          </div>
+        </form>
 
-      <div class="controls">
-        <label>검색 <input id="todo-search" type="search" placeholder="제목·메모·태그"></label>
-        <label>상태
-          <select id="todo-filter-status">
-            <option value="all">전체</option><option value="open">진행 중</option><option value="done">완료</option><option value="overdue">지연</option>
-          </select>
-        </label>
-        <label>우선순위
-          <select id="todo-filter-priority"><option value="all">전체</option><option value="1">1 높음</option><option value="2">2 보통</option><option value="3">3 낮음</option></select>
-        </label>
-        <label>태그 <select id="todo-filter-tag"><option value="all">전체</option></select></label>
-        <label>정렬
-          <select id="todo-sort">
-            <option value="due">마감일 빠른 순</option>
-            <option value="priority">우선순위 높은 순</option>
-            <option value="estimate">예상 시간 긴 순</option>
-            <option value="created">등록 순</option>
-          </select>
-        </label>
-      </div>
-      <p class="sort-note" id="sort-note"></p>
-      <p class="evidence-chip hidden" id="todo-evidence"></p>
-      <ul id="todo-list" class="list"></ul>
-    </section>
+        <details id="revisions" class="fold">
+          <summary>수정 이력 (최초 계획 보존)</summary>
+          <div id="revision-list"></div>
+        </details>
+      </section>
 
-    <!-- DO -->
-    <section id="exec-section" class="card">
-      <h2>3. 실행 기록 (Do)</h2>
-      <form id="exec-form" class="form" autocomplete="off">
-        <label>할 일 <select name="todo_id" required></select></label>
-        <div class="grid3">
-          <label>시작 시각(서울) <input name="started_at" type="datetime-local" required></label>
-          <label>종료 시각(서울) <input name="ended_at" type="datetime-local" required></label>
-          <label>실제 소요 시간(분) <input name="actual_minutes" type="number" min="1" step="1" required></label>
+      <!-- DO -->
+      <section id="exec-section" class="card">
+        <h2>실행 기록 (Do)</h2>
+        <details id="exec-add" class="fold add">
+          <summary>+ 실행 기록 추가</summary>
+          <form id="exec-form" class="form" autocomplete="off">
+            <label>할 일 <select name="todo_id" required></select></label>
+            <div class="grid3">
+              <label>시작 시각(서울) <input name="started_at" type="datetime-local" required></label>
+              <label>종료 시각(서울) <input name="ended_at" type="datetime-local" required></label>
+              <label>실제 소요 시간(분) <input name="actual_minutes" type="number" min="1" step="1" required></label>
+            </div>
+            <label>막힘 사유(없으면 비움) <input name="blocker" maxlength="1000"></label>
+            <label>메모 <input name="note" maxlength="1000"></label>
+            <button type="submit" class="primary">실행 기록 저장</button>
+          </form>
+        </details>
+        <p class="evidence-chip hidden" id="exec-evidence"></p>
+        <ul id="exec-list" class="list"></ul>
+      </section>
+
+      <!-- SEE -->
+      <section id="review-section" class="card">
+        <h2>회고 (See)</h2>
+        <p class="hint" id="stats-caption"></p>
+        <div id="stats" class="stats"></div>
+        <form id="review-form" class="form inline" autocomplete="off">
+          <label>다음 계획에 반영할 개선점 한 줄 <input name="improvement" required maxlength="500"></label>
+          <button type="submit" class="primary">회고 저장</button>
+        </form>
+        <ul id="review-list" class="list"></ul>
+      </section>
+    </div>
+
+    <div class="col-right">
+      <!-- TODO -->
+      <section id="todo-section" class="card todo-panel">
+        <h2>할 일</h2>
+        <details id="todo-add" class="fold add">
+          <summary>+ 할 일 추가</summary>
+          <form id="todo-form" class="form" autocomplete="off">
+            <h3 id="todo-form-title">할 일 추가</h3>
+            <label>제목 <input name="title" required maxlength="200"></label>
+            <label>메모 <input name="memo" maxlength="2000"></label>
+            <div class="grid2">
+              <label>마감일 <input name="due_date" type="date" required></label>
+              <label>우선순위
+                <select name="priority"><option value="1">1 높음</option><option value="2" selected>2 보통</option><option value="3">3 낮음</option></select>
+              </label>
+              <label>태그(쉼표 구분) <input name="tags" maxlength="400" placeholder="예: mlops, 보안"></label>
+              <label>예상 시간(분) <input name="estimated_minutes" type="number" min="1" max="100000" step="1" required></label>
+            </div>
+            <div class="row">
+              <button type="submit" class="primary">저장</button>
+              <button type="button" data-cancel class="hidden">수정 취소</button>
+            </div>
+          </form>
+        </details>
+
+        <div class="controls">
+          <label class="wide">검색 <input id="todo-search" type="search" placeholder="제목·메모·태그"></label>
+          <label>상태
+            <select id="todo-filter-status">
+              <option value="all">전체</option><option value="open">진행 중</option><option value="done">완료</option><option value="overdue">지연</option>
+            </select>
+          </label>
+          <label>우선순위
+            <select id="todo-filter-priority"><option value="all">전체</option><option value="1">1 높음</option><option value="2">2 보통</option><option value="3">3 낮음</option></select>
+          </label>
+          <label>태그 <select id="todo-filter-tag"><option value="all">전체</option></select></label>
+          <label>정렬
+            <select id="todo-sort">
+              <option value="due">마감일 빠른 순</option>
+              <option value="priority">우선순위 높은 순</option>
+              <option value="estimate">예상 시간 긴 순</option>
+              <option value="created">등록 순</option>
+            </select>
+          </label>
         </div>
-        <label>막힘 사유(없으면 비움) <input name="blocker" maxlength="1000"></label>
-        <label>메모 <input name="note" maxlength="1000"></label>
-        <button type="submit" class="primary">실행 기록 저장</button>
-      </form>
-      <p class="evidence-chip hidden" id="exec-evidence"></p>
-      <ul id="exec-list" class="list"></ul>
-    </section>
-
-    <!-- SEE -->
-    <section id="review-section" class="card">
-      <h2>4. 회고 (See)</h2>
-      <p class="hint" id="stats-caption"></p>
-      <div id="stats" class="stats"></div>
-      <form id="review-form" class="form" autocomplete="off">
-        <label>다음 계획에 반영할 개선점 한 줄 <input name="improvement" required maxlength="500"></label>
-        <button type="submit" class="primary">회고 저장</button>
-      </form>
-      <ul id="review-list" class="list"></ul>
-    </section>
+        <p class="sort-note" id="sort-note"></p>
+        <p class="evidence-chip hidden" id="todo-evidence"></p>
+        <div id="todo-list">
+          <h3 class="group-title" id="todo-open-title">남은 일</h3>
+          <ul id="todo-open-list" class="list"></ul>
+          <h3 class="group-title" id="todo-done-title">완료한 일</h3>
+          <ul id="todo-done-list" class="list"></ul>
+        </div>
+      </section>
+    </div>
   </main>
 
   <footer class="foot">
