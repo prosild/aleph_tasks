@@ -35,7 +35,13 @@ const snap = async () => page.evaluate(async () => {
   const r = await fetch(`${c.supabaseUrl}/rest/v1/rpc/pds_snapshot`, { method: 'POST', headers: { apikey: c.publishableKey, 'Content-Type': 'application/json' }, body: '{}' });
   return r.json();
 });
+// 접힌 입력 영역(details)은 사용자처럼 요약 줄을 눌러 펼친다.
+async function ensureOpen(sel) {
+  const closed = await page.locator(sel).evaluate((el) => { const d = el.closest('details'); return d && !d.open ? d.id : null; });
+  if (closed) await page.click(`#${closed} > summary`);
+}
 async function fill(form, values) {
+  await ensureOpen(form);
   for (const [k, v] of Object.entries(values)) {
     const el = page.locator(`${form} [name=${k}]`);
     const tag = await el.evaluate((e) => e.tagName);
@@ -160,6 +166,7 @@ test('C21·C22: 완료 버튼을 연속 두 번 눌러도 완료 기록 1건, �
 test('C23~C27: 실행 기록(시작·종료·소요·막힘) 저장, 할 일 연결 표시, 계획 값 불변', async () => {
   const planBefore = (await snap()).plans.find((p) => p.title === '[E2E] 계획');
   const add = async (todo, s, e, m, blocker = '') => {
+    await ensureOpen('#exec-form');
     await page.selectOption('#exec-form [name=todo_id]', { label: todo });
     await fill('#exec-form', { started_at: s, ended_at: e });
     await page.locator('#exec-form [name=ended_at]').dispatchEvent('change');
@@ -255,6 +262,45 @@ test('C35·C36: 새로고침·새 브라우저 컨텍스트에서 같은 값 복
   for (const k of ['plans', 'plan_revisions', 'todos', 'completion_events', 'executions', 'reviews']) assert.ok(data[k].length > 0, k);
   assert.deepEqual(data.todos.map((t) => [t.id, t.due_date, t.estimated_minutes, t.status]), before.todos.map((t) => [t.id, t.due_date, t.estimated_minutes, t.status]));
   await ctx2.close();
+});
+
+test('UI: 데스크톱 2열(할 일 오른쪽)·남은 일/완료한 일 분리·ID 접힘·가로 스크롤 없음', async () => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(srv.url); await waitOk();
+  const plan = await page.locator('#plan-section').boundingBox();
+  const todo = await page.locator('#todo-section').boundingBox();
+  assert.ok(todo.x > plan.x + plan.width - 1, '할 일 영역이 오른쪽');
+  assert.ok(await page.isVisible('#public-notice'), '필수 안내는 첫 화면에 보임');
+  assert.equal(await page.isVisible('[data-field=id]'), false, '계획 ID 는 기본으로 접힘');
+  await page.click('#plan-more > summary');
+  assert.ok(await page.isVisible('[data-field=id]'), '상세를 펼치면 ID 확인 가능');
+  assert.equal(await page.isVisible('#todo-form'), false, '할 일 입력 폼은 접힘');
+  assert.ok(await page.isVisible('#todo-add > summary'), '할 일 추가 버튼은 보임');
+  assert.match(await page.textContent('#todo-open-title'), /^남은 일 \(\d+\)$/);
+  assert.match(await page.textContent('#todo-done-title'), /^완료한 일 \(\d+\)$/);
+  const doneTitles = await page.locator('#todo-done-list .title-line').allTextContents();
+  assert.ok(doneTitles.includes('[E2E] 감마'), '완료한 할 일은 완료 섹션');
+  assert.ok(!(await page.locator('#todo-open-list .title-line').allTextContents()).includes('[E2E] 감마'));
+  const counts = await page.evaluate(() => [document.querySelectorAll('#todo-open-list li.item').length, document.querySelectorAll('#todo-done-list li.item').length]);
+  assert.equal(await page.textContent('#todo-open-title'), `남은 일 (${counts[0]})`);
+  assert.equal(await page.textContent('#todo-done-title'), `완료한 일 (${counts[1]})`);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.body).wordBreak), 'keep-all');
+  assert.ok(!/\bnull\b|undefined/.test(await page.textContent('#plan-detail')), '빈 값이 글자로 찍히지 않음');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), '가로 스크롤 없음');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/t06-ui-local-desktop.png`, fullPage: true });
+});
+
+test('UI: 모바일 폭 한 열·가로 스크롤 없음', async () => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto(srv.url); await waitOk();
+  const plan = await page.locator('#plan-section').boundingBox();
+  const todo = await page.locator('#todo-section').boundingBox();
+  assert.ok(todo.y >= plan.y + plan.height - 1, '좁은 화면에서는 아래로 쌓임');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), '가로 스크롤 없음');
+  const overflow = await page.evaluate(() => [...document.querySelectorAll('.card, .item, .chip, .callout')].filter((e) => e.scrollWidth > e.clientWidth + 1).length);
+  assert.equal(overflow, 0, '칸 밖으로 넘치는 요소 없음');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/t06-ui-local-mobile.png`, fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
 });
 
 test('콘솔 오류 없음(의도한 400 응답 제외)', async () => {

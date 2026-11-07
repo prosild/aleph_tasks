@@ -49,8 +49,24 @@
   }
 
   // ───────── 시간 표시 (서울) ─────────
-  const fmtTs = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-  const ts = (iso) => (iso ? `${fmtTs.format(new Date(iso))} (서울)` : '-');
+  const fmtTs = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  // 서울 시각을 "YYYY-MM-DD HH:mm" 한 덩어리로 표시(줄바꿈이 어색하게 끊기지 않게)
+  const ts = (iso) => {
+    if (!iso) return '-';
+    const p = Object.fromEntries(fmtTs.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+  };
+  // 설명 표시: 저장된 문자열은 그대로 두고, "일정:" 뒤 쉼표 목록만 항목으로 나눠 보여 준다.
+  function describe(text) {
+    const at = text.indexOf('일정:');
+    if (at < 0) return h('p', { class: 'desc', 'data-field': 'description' }, text);
+    const lead = text.slice(0, at).trim();
+    const items = text.slice(at + 3).split(/,\s*/).map((s) => s.trim()).filter(Boolean);
+    return h('div', { class: 'desc', 'data-field': 'description' },
+      lead ? h('p', {}, lead) : null,
+      h('div', { class: 'callout-label' }, '일정'),
+      h('ul', { class: 'schedule' }, items.map((s) => h('li', {}, s))));
+  }
   const min = (n) => `${Number(n).toLocaleString('ko-KR')}분`;
   const seoulLocalToIso = (v) => (v ? `${v}:00+09:00` : null); // datetime-local 값을 서울 시각으로 해석
 
@@ -142,7 +158,7 @@
     renderStats();
     renderReviews();
     const has = !!curPlan();
-    for (const id of ['#todo-form', '#exec-form', '#review-form']) $(id).classList.toggle('hidden', !has);
+    for (const id of ['#todo-add', '#exec-add', '#review-form']) $(id).classList.toggle('hidden', !has);
     if (!has && state.planFormMode !== 'edit') openPlanForm('create');
   }
 
@@ -160,22 +176,35 @@
     if (!p) { box.append(h('p', { class: 'hint' }, '아직 계획이 없습니다. 실제로 진행 중인 일을 계획으로 등록하세요.')); return; }
     const srcReview = p.source_review_id ? state.snap.reviews.find((r) => r.id === p.source_review_id) : null;
     const srcPlan = srcReview ? state.snap.plans.find((x) => x.id === srcReview.plan_id) : null;
-    box.append(
-      h('dl', { class: 'plan', id: 'plan-fields' },
-        h('dt', {}, '계획 ID'), h('dd', { 'data-field': 'id' }, p.id),
-        h('dt', {}, '제목'), h('dd', { 'data-field': 'title' }, p.title),
-        p.description ? [h('dt', {}, '설명'), h('dd', { 'data-field': 'description' }, p.description)] : null,
-        h('dt', {}, '기간'), h('dd', { 'data-field': 'period' }, `${p.start_date} ~ ${p.end_date}`),
-        h('dt', {}, '우선순위'), h('dd', { 'data-field': 'priority' }, PRIORITY[p.priority]),
-        h('dt', {}, '성공 기준'), h('dd', { 'data-field': 'success_criteria' }, p.success_criteria),
-        h('dt', {}, '예상 시간'), h('dd', { 'data-field': 'estimated_minutes' }, min(p.estimated_minutes)),
-        h('dt', {}, '버전'), h('dd', { 'data-field': 'version' }, `v${p.version} · 수정 ${ts(p.updated_at)}`),
-        p.applied_improvement ? [h('dt', {}, '반영한 개선점'), h('dd', { 'data-field': 'applied_improvement' },
-          h('span', { class: 'improvement' }, p.applied_improvement),
-          srcPlan ? [' ← ', h('button', { type: 'button', class: 'link', onclick: () => selectPlan(srcPlan.id, 'review-section') }, `"${srcPlan.title}" 회고`)] : null)] : null,
-      ),
-      h('button', { type: 'button', id: 'edit-plan-btn', onclick: () => openPlanForm('edit') }, '계획 수정'),
-    );
+    const days = Math.round((Date.parse(p.end_date) - Date.parse(p.start_date)) / 86400000) + 1;
+    const chip = (label, field, value, extra) => h('span', { class: 'chip' },
+      h('span', { class: 'chip-label' }, label), h('span', { 'data-field': field }, value), extra ? h('span', { class: 'chip-extra' }, extra) : null);
+    box.append(...[
+      h('div', { class: 'plan-head' },
+        h('h3', { class: 'plan-title', 'data-field': 'title' }, p.title),
+        h('div', { class: 'chips' },
+          chip('기간', 'period', `${p.start_date} ~ ${p.end_date}`, `${days}일`),
+          chip('우선순위', 'priority', PRIORITY[p.priority]),
+          chip('예상', 'estimated_minutes', min(p.estimated_minutes), `약 ${Math.round(p.estimated_minutes / 6) / 10}시간`))),
+      h('div', { class: 'callout criteria' },
+        h('div', { class: 'callout-label' }, '성공 기준'),
+        h('p', { 'data-field': 'success_criteria' }, p.success_criteria)),
+      p.applied_improvement ? h('div', { class: 'callout improve', 'data-field': 'applied_improvement' },
+        h('div', { class: 'callout-label' }, '반영한 회고 개선점'),
+        h('p', {}, p.applied_improvement),
+        srcPlan ? h('button', { type: 'button', class: 'link', onclick: () => selectPlan(srcPlan.id, 'review-section') }, `"${srcPlan.title}" 회고 보기`) : null) : null,
+      // 긴 설명·계획 ID·시각은 기본 화면에서 접어 두고 필요할 때 펼쳐 본다(내보내기에도 그대로 포함).
+      h('details', { class: 'fold', id: 'plan-more' },
+        h('summary', {}, '상세 정보 (설명·일정·계획 ID)'),
+        p.description ? describe(p.description) : null,
+        h('dl', { class: 'plan' },
+          h('dt', {}, '계획 ID'), h('dd', { 'data-field': 'id', class: 'mono' }, p.id),
+          h('dt', {}, '등록'), h('dd', {}, ts(p.created_at)),
+          h('dt', {}, '마지막 수정'), h('dd', {}, ts(p.updated_at)))),
+      h('div', { class: 'plan-actions' },
+        h('span', { class: 'hint', 'data-field': 'version' }, `현재 버전 v${p.version} · 마지막 수정 ${ts(p.updated_at)}`),
+        h('button', { type: 'button', id: 'edit-plan-btn', onclick: () => openPlanForm('edit') }, '계획 수정')),
+    ].filter(Boolean)); // 개선점이 없는 계획에서 null 이 글자로 찍히지 않게
   }
 
   function renderRevisions() {
@@ -225,24 +254,33 @@
     const sort = SORTS[$('#todo-sort').value];
     $('#sort-note').textContent = `정렬 기준: ${sort.label} (검색·필터·정렬은 서버에서 받은 전체 목록을 브라우저에서 처리)`;
     renderEvidenceChip('#todo-evidence', state.todoEvidence, () => { state.todoEvidence = null; renderTodos(); });
-    const ul = clear($('#todo-list'));
+    // 남은 일과 완료한 일을 나눠 보여 준다. 각 묶음 안의 순서는 화면에 표시한 정렬 기준을 따른다.
+    const openUl = clear($('#todo-open-list'));
+    const doneUl = clear($('#todo-done-list'));
     const list = visibleTodos();
-    if (!list.length) ul.append(h('li', { class: 'hint' }, state.todoEvidence ? '근거 기록이 없습니다(0건).' : '조건에 맞는 할 일이 없습니다.'));
+    const openCount = list.filter((t) => t.status !== 'done').length;
+    $('#todo-open-title').textContent = `남은 일 (${openCount})`;
+    $('#todo-done-title').textContent = `완료한 일 (${list.length - openCount})`;
+    const emptyMsg = state.todoEvidence ? '근거 기록이 없습니다(0건).' : '조건에 맞는 할 일이 없습니다.';
+    if (!openCount) openUl.append(h('li', { class: 'hint' }, emptyMsg));
+    if (openCount === list.length) doneUl.append(h('li', { class: 'hint' }, emptyMsg));
     for (const t of list) {
+      const ul = t.status === 'done' ? doneUl : openUl;
       const execs = state.snap.executions.filter((e) => e.todo_id === t.id);
       const actual = execs.reduce((s, e) => s + e.actual_minutes, 0);
       const done = t.status === 'done';
       ul.append(h('li', { class: `item${state.todoEvidence ? ' highlight' : ''}`, id: `todo-${t.id}`, 'data-todo-id': t.id },
-        h('div', { class: `title-line${done ? ' done-title' : ''}`, 'data-field': 'title' }, t.title),
-        t.memo ? h('div', { 'data-field': 'memo' }, t.memo) : null,
-        h('div', { class: 'meta' },
+        h('div', { class: 'item-head' },
           h('span', { class: `badge ${done ? 'done' : isOverdue(t) ? 'late' : ''}`, 'data-field': 'status' }, done ? '완료' : isOverdue(t) ? '지연' : '진행 중'),
+          h('div', { class: `title-line${done ? ' done-title' : ''}`, 'data-field': 'title' }, t.title)),
+        t.memo ? h('div', { class: 'memo', 'data-field': 'memo' }, t.memo) : null,
+        h('div', { class: 'meta' },
           h('span', { 'data-field': 'due_date' }, `마감 ${t.due_date}`),
           h('span', { 'data-field': 'priority' }, `우선순위 ${PRIORITY[t.priority]}`),
           h('span', { 'data-field': 'estimated_minutes' }, `예상 ${min(t.estimated_minutes)}`),
           h('span', {}, `실제 ${min(actual)} (${execs.length}건)`),
-          done ? h('span', {}, `완료 ${ts(t.completed_at)}`) : null,
-          h('span', { 'data-field': 'tags' }, ...t.tags.map((g) => h('span', { class: 'badge tag' }, `#${g}`)))),
+          done ? h('span', {}, `완료 ${ts(t.completed_at)}`) : null),
+        t.tags.length ? h('div', { class: 'tags', 'data-field': 'tags' }, ...t.tags.map((g) => h('span', { class: 'badge tag' }, `#${g}`))) : null,
         h('div', { class: 'actions' },
           done
             ? h('button', { type: 'button', 'data-action': 'reopen', onclick: () => reopenTodo(t.id) }, '완료 취소')
@@ -282,15 +320,15 @@
     for (const e of list) {
       const t = todoById(e.todo_id);
       ul.append(h('li', { class: `item${state.execEvidence ? ' highlight' : ''}`, id: `exec-${e.id}`, 'data-exec-id': e.id },
-        h('div', { class: 'title-line' }, '연결된 할 일: ',
+        h('div', { class: 'title-line' }, h('span', { class: 'sub-label' }, '연결된 할 일: '),
           t.deleted_at ? h('span', {}, `${t.title} (삭제된 할 일)`)
             : h('a', { href: `#todo-${t.id}`, onclick: (ev) => { ev.preventDefault(); showTodoEvidence(`실행 기록의 할 일`, [t.id]); } }, t.title)),
         h('div', { class: 'meta' },
           h('span', { 'data-field': 'started_at' }, `시작 ${ts(e.started_at)}`),
           h('span', { 'data-field': 'ended_at' }, `종료 ${ts(e.ended_at)}`),
-          h('span', { 'data-field': 'actual_minutes' }, `실제 ${min(e.actual_minutes)}`)),
-        h('div', { 'data-field': 'blocker' }, e.blocker ? `막힘 사유: ${e.blocker}` : '막힘 없음'),
-        e.note ? h('div', { class: 'meta' }, `메모: ${e.note}`) : null));
+          h('span', { 'data-field': 'actual_minutes', class: 'strong' }, `실제 ${min(e.actual_minutes)}`)),
+        e.note ? h('div', { class: 'memo' }, `메모: ${e.note}`) : null,
+        h('div', { class: e.blocker ? 'blocker' : 'meta', 'data-field': 'blocker' }, e.blocker ? `막힘 사유: ${e.blocker}` : '막힘 없음')));
     }
   }
 
@@ -299,7 +337,7 @@
     const p = curPlan();
     if (!p) { $('#stats-caption').textContent = ''; return; }
     const s = p.stats;
-    $('#stats-caption').textContent = `대상: "${p.title}" 기간 ${p.start_date} ~ ${p.end_date}의 삭제되지 않은 할 일 · 지연 기준일 ${s.seoul_today}(서울 오늘) · 값을 누르면 근거 기록으로 이동`;
+    $('#stats-caption').textContent = `선택한 계획의 삭제되지 않은 할 일 기준 · 지연 기준일 ${s.seoul_today}(서울) · 숫자를 누르면 근거 기록으로 이동`;
     const card = (key, label, value, onClick) => h('button', { type: 'button', class: 'stat', 'data-stat': key, onclick: onClick },
       h('span', { class: 'num' }, value), h('span', { class: 'lbl' }, label));
     const todoEv = (label, ids) => () => showTodoEvidence(label, ids);
@@ -405,6 +443,7 @@
     f.elements.estimated_minutes.value = t.estimated_minutes;
     $('#todo-form-title').textContent = '할 일 수정';
     f.querySelector('[data-cancel]').classList.remove('hidden');
+    $('#todo-add').open = true;
     f.scrollIntoView({ behavior: 'smooth', block: 'start' });
     f.elements.title.focus();
   }
@@ -448,6 +487,7 @@
   // ───────── 실행 기록 ─────────
   function startExecFor(id) {
     const f = $('#exec-form');
+    $('#exec-add').open = true;
     f.elements.todo_id.value = id;
     f.scrollIntoView({ behavior: 'smooth', block: 'start' });
     f.elements.started_at.focus();
