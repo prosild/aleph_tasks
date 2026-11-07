@@ -21,8 +21,19 @@
     todoEvidence: null, // { label, ids:Set }
     execEvidence: null,
     completeKeys: new Map(), // todoId -> idempotency key (같은 의도의 재전송·연속 클릭은 같은 키)
+    todoShowAll: loadTodoShowAll(), // 남은 일/완료한 일 "더 보기" 펼침 상태(이 브라우저 탭에서만 유지)
+    execShowAll: false,
     busy: 0,
   };
+
+  // ───────── 보기 설정(이 탭에서만, 저장 실패해도 화면은 정상) ─────────
+  function loadTodoShowAll() {
+    try { return Object.assign({ open: false, done: false }, JSON.parse(sessionStorage.getItem('pds-todo-show-all') || '{}')); }
+    catch { return { open: false, done: false }; }
+  }
+  function saveTodoShowAll() {
+    try { sessionStorage.setItem('pds-todo-show-all', JSON.stringify(state.todoShowAll)); } catch { /* 무시 */ }
+  }
 
   // ───────── DOM helpers ─────────
   const $ = (sel) => document.querySelector(sel);
@@ -128,6 +139,7 @@
       state.planId = plans.some((p) => p.id === fromHash) ? fromHash : (busiest ? busiest.id : null);
     }
     render();
+    if (!state.fitted) { state.fitted = true; fitTodosToFirstScreen(); }
     if (announce) setStatus(`불러옴 · 서버 기준 오늘 ${state.snap.seoul_today} (서울)`, 'ok');
   }
 
@@ -177,15 +189,18 @@
     const srcReview = p.source_review_id ? state.snap.reviews.find((r) => r.id === p.source_review_id) : null;
     const srcPlan = srcReview ? state.snap.plans.find((x) => x.id === srcReview.plan_id) : null;
     const days = Math.round((Date.parse(p.end_date) - Date.parse(p.start_date)) / 86400000) + 1;
-    const chip = (label, field, value, extra) => h('span', { class: 'chip' },
-      h('span', { class: 'chip-label' }, label), h('span', { 'data-field': field }, value), extra ? h('span', { class: 'chip-extra' }, extra) : null);
+    // 핵심 정보 칸: 라벨 / 값 / 보조 값. 날짜는 덩어리째 줄바꿈되도록 nowrap 조각으로 나눈다.
+    const fact = (label, field, valueNodes, sub) => h('div', { class: 'fact' },
+      h('span', { class: 'fact-label' }, label),
+      h('span', { class: 'fact-value', 'data-field': field }, ...valueNodes),
+      sub ? h('span', { class: 'fact-sub' }, sub) : null);
+    const nw = (t) => h('span', { class: 'nw' }, t);
     box.append(...[
-      h('div', { class: 'plan-head' },
-        h('h3', { class: 'plan-title', 'data-field': 'title' }, p.title),
-        h('div', { class: 'chips' },
-          chip('기간', 'period', `${p.start_date} ~ ${p.end_date}`, `${days}일`),
-          chip('우선순위', 'priority', PRIORITY[p.priority]),
-          chip('예상', 'estimated_minutes', min(p.estimated_minutes), `약 ${Math.round(p.estimated_minutes / 6) / 10}시간`))),
+      h('h3', { class: 'plan-title', 'data-field': 'title' }, p.title),
+      h('div', { class: 'facts' },
+        fact('기간', 'period', [nw(p.start_date), ' ~ ', nw(p.end_date)], `${days}일`),
+        fact('우선순위', 'priority', [nw(PRIORITY[p.priority])]),
+        fact('예상 시간', 'estimated_minutes', [nw(min(p.estimated_minutes))], `약 ${Math.round(p.estimated_minutes / 6) / 10}시간`)),
       h('div', { class: 'callout criteria' },
         h('div', { class: 'callout-label' }, '성공 기준'),
         h('p', { 'data-field': 'success_criteria' }, p.success_criteria)),
@@ -194,7 +209,7 @@
         h('p', {}, p.applied_improvement),
         srcPlan ? h('button', { type: 'button', class: 'link', onclick: () => selectPlan(srcPlan.id, 'review-section') }, `"${srcPlan.title}" 회고 보기`) : null) : null,
       // 긴 설명·계획 ID·시각은 기본 화면에서 접어 두고 필요할 때 펼쳐 본다(내보내기에도 그대로 포함).
-      h('details', { class: 'fold', id: 'plan-more' },
+      h('details', { class: 'fold boxed', id: 'plan-more' },
         h('summary', {}, '상세 정보 (설명·일정·계획 ID)'),
         p.description ? describe(p.description) : null,
         h('dl', { class: 'plan' },
@@ -202,7 +217,7 @@
           h('dt', {}, '등록'), h('dd', {}, ts(p.created_at)),
           h('dt', {}, '마지막 수정'), h('dd', {}, ts(p.updated_at)))),
       h('div', { class: 'plan-actions' },
-        h('span', { class: 'hint', 'data-field': 'version' }, `현재 버전 v${p.version} · 마지막 수정 ${ts(p.updated_at)}`),
+        h('span', { class: 'hint', 'data-field': 'version' }, nw(`현재 버전 v${p.version}`), ' · ', nw(`마지막 수정 ${ts(p.updated_at)}`)),
         h('button', { type: 'button', id: 'edit-plan-btn', onclick: () => openPlanForm('edit') }, '계획 수정')),
     ].filter(Boolean)); // 개선점이 없는 계획에서 null 이 글자로 찍히지 않게
   }
@@ -217,8 +232,8 @@
         h('div', { class: 'meta' },
           h('span', {}, `기간 ${r.start_date} ~ ${r.end_date}`), h('span', {}, `우선순위 ${PRIORITY[r.priority]}`),
           h('span', {}, `예상 ${min(r.estimated_minutes)}`), h('span', {}, `기록 ${ts(r.recorded_at)}`)),
-        h('div', {}, `성공 기준: ${r.success_criteria}`),
-        r.change_note ? h('div', { class: 'meta' }, `수정 사유: ${r.change_note}`) : null,
+        h('div', { class: 'memo' }, `성공 기준: ${r.success_criteria}`),
+        r.change_note ? h('div', { class: 'memo muted' }, `수정 사유: ${r.change_note}`) : null,
       ));
     }
   }
@@ -250,47 +265,63 @@
     return list.slice().sort((a, b) => cmp(a, b, sort.keys));
   }
 
+  // 첫 화면에 남은 일과 완료한 일이 함께 보이도록 각 묶음을 몇 건만 먼저 보여 준다.
+  const TODO_LIMIT = { open: 3, done: 2 };
   function renderTodos() {
+    TODO_LIMIT.open = state.openLimit || 3;
     const sort = SORTS[$('#todo-sort').value];
-    $('#sort-note').textContent = `정렬 기준: ${sort.label} (검색·필터·정렬은 서버에서 받은 전체 목록을 브라우저에서 처리)`;
+    // 정렬 기준: 단계 덩어리 사이에서만 줄바꿈되게 나눠 그린다(텍스트 내용은 그대로).
+    const steps = sort.label.split(' → ');
+    clear($('#sort-note')).append('정렬 기준: ',
+      ...steps.flatMap((s, i) => [i ? h('span', { class: 'arrow' }, ' → ') : null, h('span', { class: 'nw step' }, s)]).filter(Boolean));
     renderEvidenceChip('#todo-evidence', state.todoEvidence, () => { state.todoEvidence = null; renderTodos(); });
     // 남은 일과 완료한 일을 나눠 보여 준다. 각 묶음 안의 순서는 화면에 표시한 정렬 기준을 따른다.
     const openUl = clear($('#todo-open-list'));
     const doneUl = clear($('#todo-done-list'));
     const list = visibleTodos();
-    const openCount = list.filter((t) => t.status !== 'done').length;
-    $('#todo-open-count').textContent = String(openCount);
-    $('#todo-done-count').textContent = String(list.length - openCount);
+    const groups = { open: list.filter((t) => t.status !== 'done'), done: list.filter((t) => t.status === 'done') };
+    $('#todo-open-count').textContent = String(groups.open.length);
+    $('#todo-done-count').textContent = String(groups.done.length);
     const emptyMsg = state.todoEvidence ? '근거 기록이 없습니다(0건).' : '조건에 맞는 할 일이 없습니다.';
-    if (!openCount) openUl.append(h('li', { class: 'hint' }, emptyMsg));
-    if (openCount === list.length) doneUl.append(h('li', { class: 'hint' }, emptyMsg));
-    for (const t of list) {
-      const ul = t.status === 'done' ? doneUl : openUl;
-      const execs = state.snap.executions.filter((e) => e.todo_id === t.id);
-      const actual = execs.reduce((s, e) => s + e.actual_minutes, 0);
-      const done = t.status === 'done';
-      ul.append(h('li', { class: `item${state.todoEvidence ? ' highlight' : ''}`, id: `todo-${t.id}`, 'data-todo-id': t.id },
-        h('div', { class: 'item-head' },
-          h('span', { class: `badge ${done ? 'done' : isOverdue(t) ? 'late' : ''}`, 'data-field': 'status' }, done ? '완료' : isOverdue(t) ? '지연' : '진행 중'),
-          h('div', { class: `title-line${done ? ' done-title' : ''}`, 'data-field': 'title' }, t.title)),
-        t.memo ? h('div', { class: 'memo', 'data-field': 'memo' }, t.memo) : null,
-        h('div', { class: 'meta' },
-          h('span', { 'data-field': 'due_date' }, `마감 ${t.due_date}`),
-          h('span', { 'data-field': 'priority' }, `우선순위 ${PRIORITY[t.priority]}`),
-          h('span', { 'data-field': 'estimated_minutes' }, `예상 ${min(t.estimated_minutes)}`),
-          h('span', {}, `실제 ${min(actual)} (${execs.length}건)`),
-          done ? h('span', {}, `완료 ${ts(t.completed_at)}`) : null),
-        t.tags.length ? h('div', { class: 'tags', 'data-field': 'tags' }, ...t.tags.map((g) => h('span', { class: 'badge tag' }, `#${g}`))) : null,
-        h('div', { class: 'actions' },
-          done
-            ? h('button', { type: 'button', 'data-action': 'reopen', onclick: () => reopenTodo(t.id) }, '완료 취소')
-            : h('button', { type: 'button', class: 'primary', 'data-action': 'complete', onclick: () => completeTodo(t.id) }, '완료'),
-          h('button', { type: 'button', 'data-action': 'edit', onclick: () => editTodo(t.id) }, '수정'),
-          h('button', { type: 'button', 'data-action': 'log', onclick: () => startExecFor(t.id) }, '실행 기록 추가'),
-          execs.length ? h('button', { type: 'button', 'data-action': 'show-execs', onclick: () => showExecEvidence(`할 일 "${t.title}"의 실행 기록`, execs.map((e) => e.id)) }, '실행 기록 보기') : null,
-          h('button', { type: 'button', class: 'danger', 'data-action': 'delete', onclick: () => deleteTodo(t.id, t.title) }, '삭제'),
-        )));
+    for (const [key, ul] of [['open', openUl], ['done', doneUl]]) {
+      const items = groups[key];
+      if (!items.length) ul.append(h('li', { class: 'hint' }, emptyMsg));
+      const showAll = state.todoEvidence || state.todoShowAll[key];
+      items.forEach((t, i) => ul.append(todoItem(t, !showAll && i >= TODO_LIMIT[key])));
+      if (!state.todoEvidence && items.length > TODO_LIMIT[key]) {
+        const rest = items.length - TODO_LIMIT[key];
+        ul.append(h('li', { class: 'more-row' }, h('button', { type: 'button', class: 'more-btn', id: `todo-${key}-more`,
+          onclick: () => { state.todoShowAll[key] = !state.todoShowAll[key]; saveTodoShowAll(); renderTodos(); } },
+          state.todoShowAll[key] ? '접기' : `${key === 'open' ? '남은 일' : '완료한 일'} ${rest}건 더 보기`)));
+      }
     }
+  }
+
+  function todoItem(t, hidden) {
+    const execs = state.snap.executions.filter((e) => e.todo_id === t.id);
+    const actual = execs.reduce((s, e) => s + e.actual_minutes, 0);
+    const done = t.status === 'done';
+    return h('li', { class: `item${state.todoEvidence ? ' highlight' : ''}${done ? ' compact' : ''}${hidden ? ' hidden' : ''}`, id: `todo-${t.id}`, 'data-todo-id': t.id },
+      h('div', { class: 'item-head' },
+        h('span', { class: `badge ${done ? 'done' : isOverdue(t) ? 'late' : ''}`, 'data-field': 'status' }, done ? '완료' : isOverdue(t) ? '지연' : '진행 중'),
+        h('div', { class: `title-line${done ? ' done-title' : ''}`, 'data-field': 'title' }, t.title)),
+      t.memo ? h('div', { class: 'memo', 'data-field': 'memo' }, t.memo) : null,
+      h('div', { class: 'meta' },
+        h('span', { 'data-field': 'due_date' }, `마감 ${t.due_date}`),
+        h('span', { 'data-field': 'priority' }, `우선순위 ${PRIORITY[t.priority]}`),
+        h('span', { 'data-field': 'estimated_minutes' }, `예상 ${min(t.estimated_minutes)}`),
+        h('span', {}, `실제 ${min(actual)} (${execs.length}건)`),
+        done ? h('span', {}, `완료 ${ts(t.completed_at)}`) : null,
+        t.tags.length ? h('span', { class: 'tags', 'data-field': 'tags' }, ...t.tags.map((g) => h('span', { class: 'badge tag' }, `#${g}`))) : null),
+      h('div', { class: 'actions' },
+        done
+          ? h('button', { type: 'button', 'data-action': 'reopen', onclick: () => reopenTodo(t.id) }, '완료 취소')
+          : h('button', { type: 'button', class: 'primary', 'data-action': 'complete', onclick: () => completeTodo(t.id) }, '완료'),
+        h('button', { type: 'button', 'data-action': 'edit', onclick: () => editTodo(t.id) }, '수정'),
+        h('button', { type: 'button', 'data-action': 'log', onclick: () => startExecFor(t.id) }, '실행 기록 추가'),
+        execs.length ? h('button', { type: 'button', 'data-action': 'show-execs', onclick: () => showExecEvidence(`할 일 "${t.title}"의 실행 기록`, execs.map((e) => e.id)) }, '실행 기록 보기') : null,
+        h('button', { type: 'button', class: 'danger', 'data-action': 'delete', onclick: () => deleteTodo(t.id, t.title) }, '삭제'),
+      ));
   }
 
   function renderEvidenceChip(sel, ev, onClear) {
@@ -313,7 +344,15 @@
     renderEvidenceChip('#exec-evidence', state.execEvidence, () => { state.execEvidence = null; renderExecs(); });
     const ul = clear($('#exec-list'));
     const ids = new Set(planTodos(true).map((t) => t.id));
-    let list = state.snap.executions.filter((e) => ids.has(e.todo_id));
+    const all = state.snap.executions.filter((e) => ids.has(e.todo_id));
+    // 요약 칸: 기록 수·합계·막힘
+    const sum = all.reduce((s, e) => s + e.actual_minutes, 0);
+    const blocked = all.filter((e) => e.blocker).length;
+    clear($('#exec-summary')).append(
+      h('div', { class: 'mini' }, h('span', { class: 'mini-num' }, String(all.length)), h('span', { class: 'mini-lbl' }, '실행 기록')),
+      h('div', { class: 'mini' }, h('span', { class: 'mini-num' }, min(sum)), h('span', { class: 'mini-lbl' }, '실제 시간 합계')),
+      h('div', { class: `mini${blocked ? ' warn' : ''}` }, h('span', { class: 'mini-num' }, String(blocked)), h('span', { class: 'mini-lbl' }, '막힘 있었던 기록')));
+    let list = all;
     if (state.execEvidence) list = list.filter((e) => state.execEvidence.ids.has(e.id));
     list.sort((a, b) => cmp(a, b, [['started_at', -1], ['id', 1]]));
     if (!list.length) ul.append(h('li', { class: 'hint' }, state.execEvidence ? '근거 기록이 없습니다(0건).' : '아직 실행 기록이 없습니다.'));
@@ -322,14 +361,14 @@
     const folded = !state.execEvidence && !state.execShowAll && list.length > SHOW;
     list.forEach((e, i) => {
       const t = todoById(e.todo_id);
-      ul.append(h('li', { class: `item${state.execEvidence ? ' highlight' : ''}${folded && i >= SHOW ? ' hidden' : ''}`, id: `exec-${e.id}`, 'data-exec-id': e.id },
+      ul.append(h('li', { class: `item exec${e.blocker ? ' has-blocker' : ''}${state.execEvidence ? ' highlight' : ''}${folded && i >= SHOW ? ' hidden' : ''}`, id: `exec-${e.id}`, 'data-exec-id': e.id },
+        h('div', { class: 'exec-time' },
+          h('span', { class: 'nw', 'data-field': 'started_at' }, `시작 ${ts(e.started_at)}`),
+          h('span', { class: 'nw', 'data-field': 'ended_at' }, `종료 ${ts(e.ended_at)}`),
+          h('span', { class: 'pill nw', 'data-field': 'actual_minutes' }, `실제 ${min(e.actual_minutes)}`)),
         h('div', { class: 'title-line' }, h('span', { class: 'sub-label' }, '연결된 할 일: '),
           t.deleted_at ? h('span', {}, `${t.title} (삭제된 할 일)`)
             : h('a', { href: `#todo-${t.id}`, onclick: (ev) => { ev.preventDefault(); showTodoEvidence(`실행 기록의 할 일`, [t.id]); } }, t.title)),
-        h('div', { class: 'meta' },
-          h('span', { 'data-field': 'started_at' }, `시작 ${ts(e.started_at)}`),
-          h('span', { 'data-field': 'ended_at' }, `종료 ${ts(e.ended_at)}`),
-          h('span', { 'data-field': 'actual_minutes', class: 'strong' }, `실제 ${min(e.actual_minutes)}`)),
         e.note ? h('div', { class: 'memo' }, `메모: ${e.note}`) : null,
         h('div', { class: e.blocker ? 'blocker' : 'meta', 'data-field': 'blocker' }, e.blocker ? `막힘 사유: ${e.blocker}` : '막힘 없음')));
     });
@@ -343,40 +382,75 @@
   function renderStats() {
     const box = clear($('#stats'));
     const p = curPlan();
-    if (!p) { $('#stats-caption').textContent = ''; return; }
+    const cap = clear($('#stats-caption'));
+    if (!p) return;
     const s = p.stats;
-    $('#stats-caption').textContent = `선택한 계획의 삭제되지 않은 할 일 기준 · 지연 기준일 ${s.seoul_today}(서울) · 숫자를 누르면 근거 기록으로 이동`;
+    cap.append(h('span', { class: 'nw' }, '선택한 계획의 삭제되지 않은 할 일 기준'), ' · ',
+      h('span', { class: 'nw' }, `지연 기준일 ${s.seoul_today}(서울)`), ' · ',
+      h('span', { class: 'nw' }, '숫자를 누르면 근거 기록으로 이동'));
     const tone = { done: s.done_count > 0 ? 'good' : '', overdue: s.overdue_count > 0 ? 'bad' : '', blocked: s.blocked_count > 0 ? 'warn' : '', diff: s.diff_minutes > 0 ? 'bad' : '' };
     const card = (key, label, value, onClick) => h('button', { type: 'button', class: `stat ${tone[key] || ''}`, 'data-stat': key, onclick: onClick },
       h('span', { class: 'num' }, value), h('span', { class: 'lbl' }, label));
     const todoEv = (label, ids) => () => showTodoEvidence(label, ids);
+    const pct = s.planned_count ? Math.round((s.done_count / s.planned_count) * 100) : 0;
+    const timePct = s.estimated_minutes ? Math.min(100, Math.round((s.actual_minutes / s.estimated_minutes) * 100)) : 0;
     box.append(
-      card('planned', '계획 수(할 일)', s.planned_count, todoEv('계획 수', s.planned_todo_ids)),
-      card('done', '완료 수', s.done_count, todoEv('완료 수', s.done_todo_ids)),
-      card('overdue', '지연 수', s.overdue_count, todoEv('지연 수', s.overdue_todo_ids)),
-      card('blocked', '막힘 수', s.blocked_count, todoEv('막힘 수', s.blocked_todo_ids)),
-      card('estimated', '예상 시간', min(s.estimated_minutes), todoEv('예상 시간(할 일 예상 합계)', s.planned_todo_ids)),
-      card('actual', '실제 시간', min(s.actual_minutes), () => showExecEvidence('실제 시간(실행 기록 합계)', s.execution_ids)),
-      card('diff', '차이(실제−예상)', `${s.diff_minutes > 0 ? '+' : ''}${min(s.diff_minutes)}`, () => {
-        showTodoEvidence('차이 계산 대상 할 일', s.planned_todo_ids, false);
-        showExecEvidence('차이 계산 대상 실행 기록', s.execution_ids);
-      }),
+      h('div', { class: 'subpanel progress' },
+        h('div', { class: 'subpanel-head' }, h('h3', {}, '진행'), h('span', { class: 'subpanel-note' }, `완료율 ${pct}%`)),
+        h('div', { class: 'bar', role: 'img', 'aria-label': `완료율 ${pct}%` }, barFill(pct)),
+        h('div', { class: 'stat-grid' },
+          card('planned', '계획 수(할 일)', s.planned_count, todoEv('계획 수', s.planned_todo_ids)),
+          card('done', '완료 수', s.done_count, todoEv('완료 수', s.done_todo_ids)),
+          card('overdue', '지연 수', s.overdue_count, todoEv('지연 수', s.overdue_todo_ids)),
+          card('blocked', '막힘 수', s.blocked_count, todoEv('막힘 수', s.blocked_todo_ids)))),
+      h('div', { class: 'subpanel time' },
+        h('div', { class: 'subpanel-head' }, h('h3', {}, '시간'), h('span', { class: 'subpanel-note' }, `예상 대비 실제 ${timePct}%`)),
+        h('div', { class: 'bar', role: 'img', 'aria-label': `예상 대비 실제 ${timePct}%` }, barFill(timePct)),
+        h('div', { class: 'stat-grid three' },
+          card('estimated', '예상 시간', min(s.estimated_minutes), todoEv('예상 시간(할 일 예상 합계)', s.planned_todo_ids)),
+          card('actual', '실제 시간', min(s.actual_minutes), () => showExecEvidence('실제 시간(실행 기록 합계)', s.execution_ids)),
+          card('diff', '차이(실제−예상)', `${s.diff_minutes > 0 ? '+' : ''}${min(s.diff_minutes)}`, () => {
+            showTodoEvidence('차이 계산 대상 할 일', s.planned_todo_ids, false);
+            showExecEvidence('차이 계산 대상 실행 기록', s.execution_ids);
+          }))),
     );
+  }
+
+  // CSP(style-src 'self')는 style 속성 문자열을 막으므로 CSSOM 으로 너비를 지정한다.
+  function barFill(pct) {
+    const el = h('span', {});
+    el.style.width = `${pct}%`;
+    return el;
   }
 
   function renderReviews() {
     const ul = clear($('#review-list'));
     const list = state.snap.reviews.filter((r) => r.plan_id === state.planId).sort((a, b) => cmp(b, a, [['created_at', 1], ['id', 1]]));
+    if (!list.length) ul.append(h('li', { class: 'hint' }, '아직 저장한 회고가 없습니다.'));
     for (const r of list) {
       const next = state.snap.plans.filter((p) => p.source_review_id === r.id);
+      const st = r.stats;
       ul.append(h('li', { class: 'item', 'data-review-id': r.id },
         h('div', { class: 'title-line' }, `개선점: ${r.improvement}`),
-        h('div', { class: 'meta' }, h('span', {}, `회고일 ${r.seoul_date}`),
-          h('span', {}, `당시 집계: 계획 ${r.stats.planned_count} · 완료 ${r.stats.done_count} · 지연 ${r.stats.overdue_count} · 막힘 ${r.stats.blocked_count} · 예상 ${min(r.stats.estimated_minutes)} · 실제 ${min(r.stats.actual_minutes)}`)),
+        h('div', { class: 'meta' }, h('span', {}, `회고일 ${r.seoul_date}`), h('span', {}, '당시 집계:'),
+          h('span', {}, `계획 ${st.planned_count}`), h('span', {}, `완료 ${st.done_count}`), h('span', {}, `지연 ${st.overdue_count}`),
+          h('span', {}, `막힘 ${st.blocked_count}`), h('span', {}, `예상 ${min(st.estimated_minutes)}`), h('span', {}, `실제 ${min(st.actual_minutes)}`)),
         h('div', { class: 'actions' },
           next.length
             ? next.map((p) => h('button', { type: 'button', class: 'link', 'data-action': 'open-next', onclick: () => selectPlan(p.id, 'plan-section') }, `반영된 다음 계획: ${p.title}`))
             : h('button', { type: 'button', class: 'primary', 'data-action': 'make-next', onclick: () => openPlanForm('create', r) }, '이 개선점으로 다음 계획 만들기'))));
+    }
+  }
+
+  // 데스크톱 2열에서 처음 열었을 때 완료한 일 첫 항목까지 첫 화면에 들어오도록 남은 일 표시 수를 줄인다.
+  function fitTodosToFirstScreen() {
+    if (window.innerWidth < 960 || state.todoShowAll.open || state.todoEvidence || window.scrollY > 0) return;
+    for (let n = 3; n >= 1; n--) {
+      state.openLimit = n;
+      renderTodos();
+      // 완료한 일 첫 항목의 제목 줄까지 보이면 충분하다.
+      const firstDone = document.querySelector('#todo-done-list li.item:not(.hidden) .item-head') || $('#todo-done-title');
+      if (firstDone.getBoundingClientRect().bottom <= window.innerHeight - 8) return;
     }
   }
 

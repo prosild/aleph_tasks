@@ -18,6 +18,8 @@ before(async () => {
   srv = await startServer(0);
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   ctx = await browser.newContext({ acceptDownloads: true, locale: 'ko-KR', timezoneId: 'America/Los_Angeles' }); // 브라우저 시간대가 달라도 서울 기준이어야 함
+  // 기존 기능 테스트는 할 일 목록을 모두 펼친 상태(사용자가 '더 보기'를 누른 상태)에서 진행한다.
+  await ctx.addInitScript(() => sessionStorage.setItem('pds-todo-show-all', JSON.stringify({ open: true, done: true })));
   page = await ctx.newPage();
   page.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
@@ -262,6 +264,27 @@ test('C35·C36: 새로고침·새 브라우저 컨텍스트에서 같은 값 복
   for (const k of ['plans', 'plan_revisions', 'todos', 'completion_events', 'executions', 'reviews']) assert.ok(data[k].length > 0, k);
   assert.deepEqual(data.todos.map((t) => [t.id, t.due_date, t.estimated_minutes, t.status]), before.todos.map((t) => [t.id, t.due_date, t.estimated_minutes, t.status]));
   await ctx2.close();
+});
+
+test('UI: 처음 연 데스크톱 첫 화면에 남은 일·완료한 일이 함께 보임(더 보기)', async () => {
+  const c = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const p = await c.newPage();
+  await p.goto(srv.url);
+  await p.waitForFunction(() => /불러옴/.test(document.querySelector('#status').textContent));
+  const vh = 900;
+  const openHead = await p.locator('#todo-open-title').boundingBox();
+  const doneHead = await p.locator('#todo-done-title').boundingBox();
+  const firstDone = await p.locator('#todo-done-list li.item:visible').first().boundingBox();
+  assert.ok(openHead.y + openHead.height <= vh && doneHead.y + doneHead.height <= vh, '두 묶음 제목이 첫 화면 안');
+  assert.ok(firstDone && firstDone.y < vh, '완료한 일 첫 항목이 첫 화면에서 보임');
+  const shown = await p.locator('#todo-open-list li.item:visible').count();
+  assert.ok(shown >= 1 && shown <= 3, `남은 일은 화면 높이에 맞춰 1~3건 먼저(현재 ${shown})`);
+  assert.match(await p.textContent('#todo-open-more'), /^남은 일 \d+건 더 보기$/);
+  await p.click('#todo-open-more');
+  assert.equal(await p.locator('#todo-open-list li.item:visible').count(), await p.locator('#todo-open-list li.item').count(), '더 보기 후 전부');
+  // 정렬 기준은 단계 덩어리로 나뉘고 덩어리 안에서는 줄바꿈하지 않음
+  assert.ok(await p.evaluate(() => [...document.querySelectorAll('#sort-note .step')].every((e) => getComputedStyle(e).whiteSpace === 'nowrap')));
+  await c.close();
 });
 
 test('UI: 데스크톱 2열(할 일 오른쪽)·남은 일/완료한 일 분리·ID 접힘·가로 스크롤 없음', async () => {
