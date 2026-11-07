@@ -1,0 +1,14 @@
+{
+  "name": "t06-pds-diary-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:db": "node --test db.test.mjs",
+    "test:e2e": "node --test e2e.test.mjs",
+    "test:live": "node --test live.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
+    "playwright": "1.64.1"
+  }
+}
