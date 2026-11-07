@@ -15,18 +15,18 @@
         <p class="tagline">계획하고, 실행을 기록하고, 회고로 다음 계획을 고칩니다</p>
       </div>
       <div class="toolbar">
+        <span id="status" class="status" role="status" aria-live="polite">불러오는 중…</span>
         <button type="button" id="reload-btn">새로고침</button>
         <button type="button" id="export-btn">전체 데이터 내보내기(JSON)</button>
       </div>
     </div>
     <p class="notice" id="public-notice" role="note">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</p>
-    <p id="status" class="status" role="status" aria-live="polite">불러오는 중…</p>
   </header>
 
   <main class="layout">
     <div class="col-left">
       <!-- PLAN -->
-      <section id="plan-section" class="card">
+      <section id="plan-section" class="card sec sec-plan">
         <div class="section-head">
           <div class="head-text"><span class="eyebrow">PLAN</span><h2>계획</h2></div>
           <button type="button" id="new-plan-btn">새 계획 등록</button>
@@ -57,50 +57,32 @@
           </div>
         </form>
 
-        <details id="revisions" class="fold">
+        <details id="revisions" class="fold boxed">
           <summary>수정 이력 (최초 계획 보존)</summary>
           <div id="revision-list"></div>
         </details>
       </section>
 
-      <!-- DO -->
-      <section id="exec-section" class="card">
-        <div class="section-head"><div class="head-text"><span class="eyebrow">DO</span><h2>실행 기록</h2></div></div>
-        <details id="exec-add" class="fold add">
-          <summary>+ 실행 기록 추가</summary>
-          <form id="exec-form" class="form" autocomplete="off">
-            <label>할 일 <select name="todo_id" required></select></label>
-            <div class="grid3">
-              <label>시작 시각(서울) <input name="started_at" type="datetime-local" required></label>
-              <label>종료 시각(서울) <input name="ended_at" type="datetime-local" required></label>
-              <label>실제 소요 시간(분) <input name="actual_minutes" type="number" min="1" step="1" required></label>
-            </div>
-            <label>막힘 사유(없으면 비움) <input name="blocker" maxlength="1000"></label>
-            <label>메모 <input name="note" maxlength="1000"></label>
-            <button type="submit" class="primary">실행 기록 저장</button>
-          </form>
-        </details>
-        <p class="evidence-chip hidden" id="exec-evidence"></p>
-        <ul id="exec-list" class="list"></ul>
-      </section>
-
       <!-- SEE -->
-      <section id="review-section" class="card">
+      <section id="review-section" class="card sec sec-see">
         <div class="section-head"><div class="head-text"><span class="eyebrow">SEE</span><h2>회고</h2></div></div>
         <p class="hint" id="stats-caption"></p>
-        <div id="stats" class="stats"></div>
-        <form id="review-form" class="form inline" autocomplete="off">
-          <label>다음 계획에 반영할 개선점 한 줄 <input name="improvement" required maxlength="500"></label>
-          <button type="submit" class="primary">회고 저장</button>
-        </form>
-        <ul id="review-list" class="list"></ul>
+        <div id="stats" class="see-grid"></div>
+        <div class="subpanel improve">
+          <div class="subpanel-head"><h3>개선점 → 다음 계획</h3></div>
+          <form id="review-form" class="form inline" autocomplete="off">
+            <label>다음 계획에 반영할 개선점 한 줄 <input name="improvement" required maxlength="500"></label>
+            <button type="submit" class="primary">회고 저장</button>
+          </form>
+          <ul id="review-list" class="list"></ul>
+        </div>
       </section>
     </div>
 
     <div class="col-right">
       <!-- TODO -->
-      <section id="todo-section" class="card todo-panel">
-        <div class="section-head"><div class="head-text"><span class="eyebrow">TODO</span><h2>할 일</h2></div></div>
+      <section id="todo-section" class="card sec sec-todo todo-panel">
+        <div class="section-head"><div class="head-text"><span class="eyebrow">TODO</span><h2>할 일</h2></div><span class="total" id="todo-total"></span></div>
         <details id="todo-add" class="fold add">
           <summary>+ 할 일 추가</summary>
           <form id="todo-form" class="form" autocomplete="off">
@@ -122,6 +104,8 @@
           </form>
         </details>
 
+        <details id="todo-filters" class="filters" open>
+        <summary>검색·필터</summary>
         <div class="controls">
           <label class="wide">검색 <input id="todo-search" type="search" placeholder="제목·메모·태그"></label>
           <label>상태
@@ -142,7 +126,8 @@
             </select>
           </label>
         </div>
-        <p class="sort-note" id="sort-note"></p>
+        </details>
+        <p class="sort-note" id="sort-note" title="검색·필터·정렬은 서버에서 받은 전체 목록을 브라우저에서 처리합니다"></p>
         <p class="evidence-chip hidden" id="todo-evidence"></p>
         <div id="todo-list" class="todo-groups">
           <div class="todo-group open" id="todo-open-group">
@@ -154,6 +139,28 @@
             <ul id="todo-done-list" class="list"></ul>
           </div>
         </div>
+      </section>
+
+      <!-- DO -->
+      <section id="exec-section" class="card sec sec-do">
+        <div class="section-head"><div class="head-text"><span class="eyebrow">DO</span><h2>실행 기록</h2></div></div>
+        <div class="mini-row" id="exec-summary"></div>
+        <details id="exec-add" class="fold add">
+          <summary>+ 실행 기록 추가</summary>
+          <form id="exec-form" class="form" autocomplete="off">
+            <label>할 일 <select name="todo_id" required></select></label>
+            <div class="grid3">
+              <label>시작 시각(서울) <input name="started_at" type="datetime-local" required></label>
+              <label>종료 시각(서울) <input name="ended_at" type="datetime-local" required></label>
+              <label>실제 소요 시간(분) <input name="actual_minutes" type="number" min="1" step="1" required></label>
+            </div>
+            <label>막힘 사유(없으면 비움) <input name="blocker" maxlength="1000"></label>
+            <label>메모 <input name="note" maxlength="1000"></label>
+            <button type="submit" class="primary">실행 기록 저장</button>
+          </form>
+        </details>
+        <p class="evidence-chip hidden" id="exec-evidence"></p>
+        <ul id="exec-list" class="list"></ul>
       </section>
     </div>
   </main>
