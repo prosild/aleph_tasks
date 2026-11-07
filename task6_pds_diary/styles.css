@@ -1,0 +1,57 @@
+:root {
+  --bg: #f6f7f9; --card: #fff; --ink: #1d2330; --muted: #5b6475; --line: #d9dde5;
+  --accent: #2456c9; --accent-ink: #fff; --warn-bg: #fff4d6; --warn-ink: #6b4a00;
+  --done: #1f7a4d; --late: #b42318; --hl: #fff1a8;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14171d; --card: #1d222b; --ink: #e8ebf1; --muted: #a3acbd; --line: #343b48;
+    --accent: #7aa2ff; --accent-ink: #0d1220; --warn-bg: #3a2f12; --warn-ink: #ffdf8a;
+    --done: #5fd39a; --late: #ff8a80; --hl: #4a4216; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+.top, main, .foot { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+.top { padding-top: 16px; }
+h1 { margin: 0 0 8px; font-size: 1.5rem; }
+h2 { margin: 0 0 12px; font-size: 1.15rem; }
+h3 { margin: 0 0 8px; font-size: 1rem; }
+.notice { margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-ink); font-weight: 600; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.status { flex: 1 1 200px; color: var(--muted); }
+.status.error { color: var(--late); font-weight: 600; }
+.status.ok { color: var(--done); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-bottom: 8px; }
+.form { display: grid; gap: 8px; margin: 8px 0 12px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.grid3, .grid4 { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+label { display: grid; gap: 4px; font-size: .9rem; color: var(--muted); }
+input, select, textarea, button { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.link { border: 0; padding: 0; background: none; color: var(--accent); text-decoration: underline; }
+.hidden { display: none !important; }
+.controls { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 8px; }
+.sort-note { color: var(--muted); font-size: .88rem; margin: 8px 0; }
+.evidence-chip { background: var(--hl); padding: 6px 10px; border-radius: 6px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.item { border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow-wrap: anywhere; }
+.item.highlight { background: var(--hl); }
+.item .meta { color: var(--muted); font-size: .85rem; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.item .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.badge { display: inline-block; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); font-size: .8rem; }
+.badge.done { color: var(--done); border-color: var(--done); }
+.badge.late { color: var(--late); border-color: var(--late); }
+.tag { background: var(--bg); }
+.title-line { font-weight: 600; }
+.done-title { text-decoration: line-through; color: var(--muted); }
+dl.plan { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 8px; }
+dl.plan dt { color: var(--muted); }
+dl.plan dd { margin: 0; overflow-wrap: anywhere; }
+.improvement { background: var(--warn-bg); color: var(--warn-ink); padding: 6px 10px; border-radius: 6px; margin: 0; }
+.revisions summary { cursor: pointer; font-weight: 600; }
+.stats { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom: 8px; }
+.stat { text-align: left; display: grid; gap: 2px; padding: 10px; }
+.stat .num { font-size: 1.4rem; font-weight: 700; }
+.stat .lbl { color: var(--muted); font-size: .85rem; }
+.hint { color: var(--muted); font-size: .88rem; margin: 0 0 8px; }
+.foot { color: var(--muted); font-size: .85rem; padding-bottom: 24px; }

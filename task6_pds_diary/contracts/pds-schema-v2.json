@@ -1,0 +1,141 @@
+{
+  "schema": "pds-schema-v2",
+  "description": "Plan-Do-See 다이어리 최종 데이터베이스 계약. 실제 DDL은 db/001_pds_schema.sql 과 같다.",
+  "database": {
+    "engine": "PostgreSQL (Supabase)",
+    "schema": "public",
+    "table_prefix": "pds_",
+    "access": {
+      "login": "없음 (T06 요구사항, 접근 제어는 T07에서 적용)",
+      "read": "anon/authenticated 역할에 6개 테이블 SELECT 허용, RLS 정책 using(true)",
+      "write": "테이블 직접 INSERT/UPDATE/DELETE 권한 없음. 아래 rpc 함수로만 쓰기 (SECURITY DEFINER, search_path='', 입력 검증)",
+      "browser_key": "publishable key 만 사용. secret/service_role 키는 브라우저·저장소에 두지 않는다"
+    }
+  },
+  "rules": {
+    "date": "기간(start_date, end_date)과 마감일(due_date)은 DATE, 'YYYY-MM-DD' 달력 날짜. 시간대 변환 없음",
+    "timestamp": "시각은 timestamptz 로 UTC 저장, 화면은 Asia/Seoul 로 표시. 실행 기록 입력값(datetime-local)은 서울 시각(+09:00)으로 해석",
+    "seoul_today": "(now() at time zone 'Asia/Seoul')::date — 지연 판단 기준일은 서버가 계산",
+    "time_unit": "모든 시간 값은 분(minutes) 정수. estimated_minutes 1~100000, actual_minutes ≥ 1 이고 시작~종료 범위(올림 분) 이하",
+    "execution_range": "ended_at > started_at, 1건당 24시간 이하",
+    "priority": "1=높음, 2=보통, 3=낮음 (작을수록 높음)",
+    "soft_delete": "할 일 삭제는 deleted_at 기록. 실행·완료 이력은 보존되고 화면 목록·회고 집계에서 제외",
+    "sorting": "검색·필터·정렬은 서버 스냅샷을 받아 브라우저에서 처리. 모든 정렬은 created_at, id 를 마지막 보조 기준(tie-breaker)으로 사용",
+    "export": "pds_snapshot() 결과 전체를 JSON 파일 하나로 내려받는다"
+  },
+  "tables": {
+    "pds_plans": {
+      "purpose": "계획의 현재 값",
+      "columns": {
+        "id": "uuid PK default gen_random_uuid() — 수정해도 유지",
+        "title": "text not null, 1~120자",
+        "description": "text not null default '', ≤2000자",
+        "start_date": "date not null",
+        "end_date": "date not null, ≥ start_date",
+        "priority": "smallint not null, 1~3",
+        "success_criteria": "text not null, 1~1000자",
+        "estimated_minutes": "integer not null, 1~100000 (분)",
+        "source_review_id": "uuid null FK → pds_reviews.id (on delete set null) — 이 계획이 반영한 회고",
+        "applied_improvement": "text null ≤500자 — 반영한 회고 개선점 원문(서버가 회고에서 복사)",
+        "version": "integer not null ≥1 — 수정마다 +1",
+        "created_at": "timestamptz not null default now()",
+        "updated_at": "timestamptz not null default now()"
+      }
+    },
+    "pds_plan_revisions": {
+      "purpose": "계획 버전별 스냅샷(수정 이력). v1 = 최초 계획. 추가만 가능, UPDATE 는 트리거가 거부",
+      "columns": {
+        "id": "bigint identity PK",
+        "plan_id": "uuid not null FK → pds_plans.id (on delete cascade)",
+        "version": "integer not null, unique(plan_id, version)",
+        "title": "text", "description": "text", "start_date": "date", "end_date": "date", "priority": "smallint",
+        "success_criteria": "text", "estimated_minutes": "integer (분)", "applied_improvement": "text null",
+        "change_note": "text ≤500자 — 수정 사유 (v1 은 '최초 계획')",
+        "recorded_at": "timestamptz default now()"
+      }
+    },
+    "pds_todos": {
+      "purpose": "계획에 속한 할 일",
+      "columns": {
+        "id": "uuid PK",
+        "plan_id": "uuid not null FK → pds_plans.id (on delete cascade)",
+        "title": "text not null, 1~200자",
+        "memo": "text not null default '', ≤2000자",
+        "due_date": "date not null — 마감일",
+        "priority": "smallint not null, 1~3",
+        "tags": "text[] not null default '{}', ≤10개, 각 ≤30자, 공백 제거·중복 제거",
+        "estimated_minutes": "integer not null, 1~100000 (분)",
+        "status": "text not null 'open' | 'done'",
+        "completed_at": "timestamptz null — status='done' 일 때만 값 (check 제약)",
+        "deleted_at": "timestamptz null — 삭제 표시",
+        "created_at": "timestamptz", "updated_at": "timestamptz"
+      }
+    },
+    "pds_completion_events": {
+      "purpose": "완료 처리 기록. 중복 완료 방지",
+      "columns": {
+        "id": "bigint identity PK",
+        "todo_id": "uuid not null FK → pds_todos.id (on delete cascade)",
+        "idempotency_key": "uuid not null UNIQUE — 같은 완료 요청 재전송·연속 클릭 식별",
+        "completed_at": "timestamptz default now()",
+        "undone_at": "timestamptz null — 완료 취소 시각. 한 번만 기록 가능(트리거)"
+      },
+      "constraints": ["unique(idempotency_key)", "unique index (todo_id) where undone_at is null — 할 일당 유효 완료 1건"]
+    },
+    "pds_executions": {
+      "purpose": "실행 기록(Do). 계획·할 일의 예상 값을 바꾸지 않는다",
+      "columns": {
+        "id": "uuid PK",
+        "todo_id": "uuid not null FK → pds_todos.id (on delete cascade)",
+        "started_at": "timestamptz not null",
+        "ended_at": "timestamptz not null",
+        "actual_minutes": "integer not null — 실제 소요 시간(분)",
+        "blocker": "text null 1~1000자 — 막힘 사유(공백만 입력하면 null)",
+        "note": "text not null default '' ≤1000자",
+        "created_at": "timestamptz"
+      }
+    },
+    "pds_reviews": {
+      "purpose": "회고(See). 개선점과 작성 시점 집계 스냅샷",
+      "columns": {
+        "id": "uuid PK",
+        "plan_id": "uuid not null FK → pds_plans.id (on delete cascade)",
+        "improvement": "text not null 1~500자 — 다음 계획에 반영할 개선점 한 줄",
+        "stats": "jsonb not null — 작성 시점 pds_plan_stats 결과",
+        "seoul_date": "date not null — 서울 기준 작성일",
+        "created_at": "timestamptz"
+      }
+    }
+  },
+  "relationships": [
+    "pds_plans 1 ─ N pds_plan_revisions (plan_id)",
+    "pds_plans 1 ─ N pds_todos (plan_id)",
+    "pds_todos 1 ─ N pds_executions (todo_id)",
+    "pds_todos 1 ─ N pds_completion_events (todo_id)",
+    "pds_plans 1 ─ N pds_reviews (plan_id)",
+    "pds_reviews 1 ─ N pds_plans (source_review_id) — 회고 개선점을 반영한 다음 계획"
+  ],
+  "review_stats": {
+    "function": "pds_plan_stats(p_plan_id uuid) → jsonb",
+    "target": "해당 계획의 deleted_at is null 인 할 일",
+    "planned_count": "대상 할 일 수 (근거: planned_todo_ids)",
+    "done_count": "대상 중 status='done' 수 (근거: done_todo_ids)",
+    "overdue_count": "대상 중 status='open' 이고 due_date < 서울 오늘 인 수. 완료 건 제외 (근거: overdue_todo_ids)",
+    "blocked_count": "대상 중 blocker 가 있는 실행 기록을 1건 이상 가진 할 일 수 (근거: blocked_todo_ids)",
+    "estimated_minutes": "대상 할 일 estimated_minutes 합계, 없으면 0",
+    "actual_minutes": "대상 할 일의 실행 기록 actual_minutes 합계, 없으면 0 (근거: execution_ids)",
+    "diff_minutes": "actual_minutes − estimated_minutes"
+  },
+  "rpc": {
+    "pds_snapshot()": "전체 데이터 + 계획별 stats (화면 조회·내보내기)",
+    "pds_plan_stats(p_plan_id)": "회고 집계와 근거 ID",
+    "pds_create_plan(p_title, p_description, p_start_date, p_end_date, p_priority, p_success_criteria, p_estimated_minutes, p_source_review_id?)": "계획 생성 + 이력 v1",
+    "pds_update_plan(p_plan_id, p_expected_version, ...같은 필드, p_change_note)": "버전 확인(낙관적 잠금) 후 수정 + 새 이력. 변경 없으면 이력 추가 안 함",
+    "pds_create_todo / pds_update_todo": "할 일 생성·수정",
+    "pds_complete_todo(p_todo_id, p_idempotency_key)": "멱등 완료. {created:false, reason:'duplicate_request'|'already_done'} 이면 새 기록 없음",
+    "pds_reopen_todo(p_todo_id)": "완료 취소 (유효 완료 이벤트에 undone_at 기록)",
+    "pds_delete_todo(p_todo_id)": "삭제 표시",
+    "pds_add_execution(p_todo_id, p_started_at, p_ended_at, p_actual_minutes, p_blocker?, p_note?)": "실행 기록 추가",
+    "pds_create_review(p_plan_id, p_improvement)": "회고 저장(집계 스냅샷 포함)"
+  }
+}
