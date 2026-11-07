@@ -276,14 +276,17 @@ test('UI: 데스크톱 2열(할 일 오른쪽)·남은 일/완료한 일 분리�
   assert.ok(await page.isVisible('[data-field=id]'), '상세를 펼치면 ID 확인 가능');
   assert.equal(await page.isVisible('#todo-form'), false, '할 일 입력 폼은 접힘');
   assert.ok(await page.isVisible('#todo-add > summary'), '할 일 추가 버튼은 보임');
-  assert.match(await page.textContent('#todo-open-title'), /^남은 일 \(\d+\)$/);
-  assert.match(await page.textContent('#todo-done-title'), /^완료한 일 \(\d+\)$/);
+  assert.equal(await page.textContent('#todo-open-title'), '남은 일');
+  assert.equal(await page.textContent('#todo-done-title'), '완료한 일');
+  // 할 일 섹션 안에서 남은 일·완료한 일이 각각 별도 영역(div)
+  assert.equal(await page.evaluate(() => [...document.querySelectorAll('#todo-section .todo-group')].map((g) => g.id).join(',')), 'todo-open-group,todo-done-group');
+  assert.ok(await page.evaluate(() => document.querySelector('#todo-open-list').closest('.todo-group').id === 'todo-open-group' && document.querySelector('#todo-done-list').closest('.todo-group').id === 'todo-done-group'));
   const doneTitles = await page.locator('#todo-done-list .title-line').allTextContents();
   assert.ok(doneTitles.includes('[E2E] 감마'), '완료한 할 일은 완료 섹션');
   assert.ok(!(await page.locator('#todo-open-list .title-line').allTextContents()).includes('[E2E] 감마'));
   const counts = await page.evaluate(() => [document.querySelectorAll('#todo-open-list li.item').length, document.querySelectorAll('#todo-done-list li.item').length]);
-  assert.equal(await page.textContent('#todo-open-title'), `남은 일 (${counts[0]})`);
-  assert.equal(await page.textContent('#todo-done-title'), `완료한 일 (${counts[1]})`);
+  assert.equal(await page.textContent('#todo-open-count'), String(counts[0]));
+  assert.equal(await page.textContent('#todo-done-count'), String(counts[1]));
   assert.equal(await page.evaluate(() => getComputedStyle(document.body).wordBreak), 'keep-all');
   assert.ok(!/\bnull\b|undefined/.test(await page.textContent('#plan-detail')), '빈 값이 글자로 찍히지 않음');
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), '가로 스크롤 없음');

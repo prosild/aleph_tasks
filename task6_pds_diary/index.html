@@ -10,7 +10,10 @@
 <body>
   <header class="top">
     <div class="top-row">
-      <h1>Plan-Do-See 다이어리</h1>
+      <div class="brand">
+        <h1>Plan-Do-See 다이어리</h1>
+        <p class="tagline">계획하고, 실행을 기록하고, 회고로 다음 계획을 고칩니다</p>
+      </div>
       <div class="toolbar">
         <button type="button" id="reload-btn">새로고침</button>
         <button type="button" id="export-btn">전체 데이터 내보내기(JSON)</button>
@@ -25,7 +28,7 @@
       <!-- PLAN -->
       <section id="plan-section" class="card">
         <div class="section-head">
-          <h2>계획 (Plan)</h2>
+          <div class="head-text"><span class="eyebrow">PLAN</span><h2>계획</h2></div>
           <button type="button" id="new-plan-btn">새 계획 등록</button>
         </div>
         <label class="plan-select-label">계획 선택
@@ -62,7 +65,7 @@
 
       <!-- DO -->
       <section id="exec-section" class="card">
-        <h2>실행 기록 (Do)</h2>
+        <div class="section-head"><div class="head-text"><span class="eyebrow">DO</span><h2>실행 기록</h2></div></div>
         <details id="exec-add" class="fold add">
           <summary>+ 실행 기록 추가</summary>
           <form id="exec-form" class="form" autocomplete="off">
@@ -83,7 +86,7 @@
 
       <!-- SEE -->
       <section id="review-section" class="card">
-        <h2>회고 (See)</h2>
+        <div class="section-head"><div class="head-text"><span class="eyebrow">SEE</span><h2>회고</h2></div></div>
         <p class="hint" id="stats-caption"></p>
         <div id="stats" class="stats"></div>
         <form id="review-form" class="form inline" autocomplete="off">
@@ -97,7 +100,7 @@
     <div class="col-right">
       <!-- TODO -->
       <section id="todo-section" class="card todo-panel">
-        <h2>할 일</h2>
+        <div class="section-head"><div class="head-text"><span class="eyebrow">TODO</span><h2>할 일</h2></div></div>
         <details id="todo-add" class="fold add">
           <summary>+ 할 일 추가</summary>
           <form id="todo-form" class="form" autocomplete="off">
@@ -141,11 +144,15 @@
         </div>
         <p class="sort-note" id="sort-note"></p>
         <p class="evidence-chip hidden" id="todo-evidence"></p>
-        <div id="todo-list">
-          <h3 class="group-title" id="todo-open-title">남은 일</h3>
-          <ul id="todo-open-list" class="list"></ul>
-          <h3 class="group-title" id="todo-done-title">완료한 일</h3>
-          <ul id="todo-done-list" class="list"></ul>
+        <div id="todo-list" class="todo-groups">
+          <div class="todo-group open" id="todo-open-group">
+            <div class="group-head"><h3 id="todo-open-title">남은 일</h3><span class="count" id="todo-open-count">0</span></div>
+            <ul id="todo-open-list" class="list"></ul>
+          </div>
+          <div class="todo-group done" id="todo-done-group">
+            <div class="group-head"><h3 id="todo-done-title">완료한 일</h3><span class="count" id="todo-done-count">0</span></div>
+            <ul id="todo-done-list" class="list"></ul>
+          </div>
         </div>
       </section>
     </div>
