@@ -18,11 +18,13 @@ async function rpc(fn, body = {}) {
 const save = () => writeFile(new URL('./live-created-ids.json', import.meta.url), JSON.stringify(created, null, 2));
 
 test('원격: 쓰기는 RPC 로만, 테이블 직접 쓰기는 거부', { skip: !URL_ || !KEY }, async () => {
+  // PATCH/DELETE 는 존재하지 않는 무작위 ID 만 대상으로 한다. 권한이 잘못 열려 있어도 실제 행은 바뀌지 않는다.
+  const nobody = randomUUID();
   for (const [method, path, body] of [
     ['POST', 'pds_plans', { title: 'x' }],
     ['POST', 'pds_plan_revisions', { title: 'x' }],
-    ['PATCH', 'pds_todos?id=not.is.null', { title: 'x' }],
-    ['DELETE', 'pds_executions?id=not.is.null', null],
+    ['PATCH', `pds_todos?id=eq.${nobody}`, { title: 'x' }],
+    ['DELETE', `pds_executions?id=eq.${nobody}`, null],
     ['POST', 'pds_completion_events', { todo_id: randomUUID(), idempotency_key: randomUUID() }],
   ]) {
     const r = await fetch(`${URL_}/rest/v1/${path}`, { method, headers: { ...H, Prefer: 'return=minimal' }, body: body ? JSON.stringify(body) : undefined });
@@ -32,7 +34,8 @@ test('원격: 쓰기는 RPC 로만, 테이블 직접 쓰기는 거부', { skip: 
   assert.ok(r.status >= 400, '내부 도우미 함수는 호출 불가');
 });
 
-test('원격: 저장·재조회·병렬 연속 완료 1건·이력 보존·스크립트 문자열', { skip: !URL_ || !KEY }, async () => {
+// 이 테스트는 공개 DB 에 [검증용] 데이터를 만든다. PDS_ALLOW_WRITE=1 일 때만 실행한다(실제 기록 보호).
+test('원격: 저장·재조회·병렬 연속 완료 1건·이력 보존·스크립트 문자열', { skip: !URL_ || !KEY || process.env.PDS_ALLOW_WRITE !== '1' }, async () => {
   const plan = await rpc('pds_create_plan', { p_title: '[검증용] 자동 점검 계획', p_description: '배포 검증용 합성 데이터', p_start_date: '2026-11-07',
     p_end_date: '2026-11-08', p_priority: 3, p_success_criteria: '검증 통과', p_estimated_minutes: 10 });
   created.plans.push(plan); await save();
