@@ -107,7 +107,9 @@
     const plans = state.snap.plans;
     const fromHash = new URLSearchParams(location.hash.slice(1)).get('plan');
     if (!plans.some((p) => p.id === state.planId)) {
-      state.planId = plans.some((p) => p.id === fromHash) ? fromHash : (plans.length ? plans[plans.length - 1].id : null);
+      // 주소에 계획이 없으면 할 일이 가장 많은 계획(같으면 최근 등록)을 먼저 보여 준다.
+      const busiest = plans.reduce((best, p) => (!best || p.stats.planned_count >= best.stats.planned_count ? p : best), null);
+      state.planId = plans.some((p) => p.id === fromHash) ? fromHash : (busiest ? busiest.id : null);
     }
     render();
     if (announce) setStatus(`불러옴 · 서버 기준 오늘 ${state.snap.seoul_today} (서울)`, 'ok');
