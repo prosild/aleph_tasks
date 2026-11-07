@@ -2,5 +2,5 @@
 // secret / service_role 키는 절대 이 파일이나 저장소에 넣지 않는다.
 window.PDS_CONFIG = {
   supabaseUrl: 'https://ocacvvmryvtqajlmosqj.supabase.co',
-  publishableKey: '__PUBLISHABLE_KEY__'
+  publishableKey: 'sb_publishable_QdAl9tMSE8PtVL5YhFjzmw_IUtYENXz'
 };
