@@ -260,3 +260,24 @@ p, .memo, .blocker, .hint, .callout p, .desc, .sort-note { text-wrap: pretty; }
 
 /* 예상보다 실제가 길면 막대를 경고색으로 */
 .bar.over > span { background: var(--bad); }
+
+/* 피드백 반영: 세로 공간 절약 */
+.top-row { align-items: center; }
+.toolbar { align-items: center; }
+.toolbar .status { margin: 0; }
+.notice { margin: 6px 0 14px; }
+.section-head .total { font-size: .8rem; font-weight: 700; color: var(--muted); }
+/* 완료한 일: 촘촘하게. 완료 취소는 제목 줄, 나머지 동작은 마우스를 올리거나 포커스할 때 */
+.item-head .inline-btn { flex: none; padding: 1px 8px; font-size: .74rem; }
+.item.compact .tags { display: none; }
+.item.compact .meta { font-size: .78rem; }
+@media (hover: hover) {
+  .item.compact .actions.secondary { display: none; }
+  .item.compact:hover .actions.secondary, .item.compact:focus-within .actions.secondary { display: flex; }
+}
+
+.filters > summary { cursor: pointer; font-size: .82rem; font-weight: 700; color: var(--muted); padding: 2px 0; }
+.filters[open] > summary { display: none; }
+.filters:not([open]) { margin: 4px 0; }
+.more-btn { padding: 3px 10px; font-size: .82rem; }
+.todo-group .group-head { margin-bottom: 6px; }

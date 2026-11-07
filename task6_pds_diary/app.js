@@ -282,6 +282,7 @@
     const groups = { open: list.filter((t) => t.status !== 'done'), done: list.filter((t) => t.status === 'done') };
     $('#todo-open-count').textContent = String(groups.open.length);
     $('#todo-done-count').textContent = String(groups.done.length);
+    $('#todo-total').textContent = `전체 ${planTodos().length}건`;
     const emptyMsg = state.todoEvidence ? '근거 기록이 없습니다(0건).' : '조건에 맞는 할 일이 없습니다.';
     for (const [key, ul] of [['open', openUl], ['done', doneUl]]) {
       const items = groups[key];
@@ -304,7 +305,8 @@
     return h('li', { class: `item${state.todoEvidence ? ' highlight' : ''}${done ? ' compact' : ''}${hidden ? ' hidden' : ''}`, id: `todo-${t.id}`, 'data-todo-id': t.id },
       h('div', { class: 'item-head' },
         h('span', { class: `badge ${done ? 'done' : isOverdue(t) ? 'late' : ''}`, 'data-field': 'status' }, done ? '완료' : isOverdue(t) ? '지연' : '진행 중'),
-        h('div', { class: `title-line${done ? ' done-title' : ''}`, 'data-field': 'title' }, t.title)),
+        h('div', { class: `title-line${done ? ' done-title' : ''}`, 'data-field': 'title' }, t.title),
+        done ? h('button', { type: 'button', class: 'inline-btn', 'data-action': 'reopen', onclick: () => reopenTodo(t.id) }, '완료 취소') : null),
       t.memo ? h('div', { class: 'memo', 'data-field': 'memo' }, t.memo) : null,
       h('div', { class: 'meta' },
         h('span', { 'data-field': 'due_date' }, `마감 ${t.due_date}`),
@@ -313,10 +315,8 @@
         h('span', {}, `실제 ${min(actual)} (${execs.length}건)`),
         done ? h('span', {}, `완료 ${ts(t.completed_at)}`) : null,
         t.tags.length ? h('span', { class: 'tags', 'data-field': 'tags' }, ...t.tags.map((g) => h('span', { class: 'badge tag' }, `#${g}`))) : null),
-      h('div', { class: 'actions' },
-        done
-          ? h('button', { type: 'button', 'data-action': 'reopen', onclick: () => reopenTodo(t.id) }, '완료 취소')
-          : h('button', { type: 'button', class: 'primary', 'data-action': 'complete', onclick: () => completeTodo(t.id) }, '완료'),
+      h('div', { class: `actions${done ? ' secondary' : ''}` },
+        done ? null : h('button', { type: 'button', class: 'primary', 'data-action': 'complete', onclick: () => completeTodo(t.id) }, '완료'),
         h('button', { type: 'button', 'data-action': 'edit', onclick: () => editTodo(t.id) }, '수정'),
         h('button', { type: 'button', 'data-action': 'log', onclick: () => startExecFor(t.id) }, '실행 기록 추가'),
         execs.length ? h('button', { type: 'button', 'data-action': 'show-execs', onclick: () => showExecEvidence(`할 일 "${t.title}"의 실행 기록`, execs.map((e) => e.id)) }, '실행 기록 보기') : null,
@@ -446,13 +446,19 @@
   // 데스크톱 2열에서 처음 열었을 때 완료한 일 첫 항목까지 첫 화면에 들어오도록 남은 일 표시 수를 줄인다.
   function fitTodosToFirstScreen() {
     if (window.innerWidth < 960 || state.todoShowAll.open || state.todoEvidence || window.scrollY > 0) return;
+    // 완료한 일 첫 항목 전체(버튼 포함)가 첫 화면 안에 들어와야 한다.
+    const fits = () => {
+      const firstDone = document.querySelector('#todo-done-list li.item:not(.hidden)') || $('#todo-done-title');
+      return firstDone.getBoundingClientRect().bottom <= window.innerHeight - 8;
+    };
     for (let n = 3; n >= 1; n--) {
       state.openLimit = n;
       renderTodos();
-      // 완료한 일 첫 항목의 제목 줄까지 보이면 충분하다.
-      const firstDone = document.querySelector('#todo-done-list li.item:not(.hidden) .item-head') || $('#todo-done-title');
-      if (firstDone.getBoundingClientRect().bottom <= window.innerHeight - 8) return;
+      if (fits()) return;
     }
+    // 그래도 부족한 낮은 화면: 쓰고 있지 않은 검색·필터 줄만 접는다(정렬 기준 문구는 계속 표시).
+    const filtersIdle = !$('#todo-search').value && ['#todo-filter-status', '#todo-filter-priority', '#todo-filter-tag'].every((id) => $(id).value === 'all');
+    if (filtersIdle) $('#todo-filters').open = false;
   }
 
   // ───────── 근거 이동 ─────────

@@ -325,8 +325,79 @@ test('UI: 모바일 폭 한 열·가로 스크롤 없음', async () => {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), '가로 스크롤 없음');
   const overflow = await page.evaluate(() => [...document.querySelectorAll('.card, .item, .chip, .callout')].filter((e) => e.scrollWidth > e.clientWidth + 1).length);
   assert.equal(overflow, 0, '칸 밖으로 넘치는 요소 없음');
+  // 입력 폼을 모두 펼쳐도 가로로 넘치지 않음
+  await page.evaluate(() => { document.querySelectorAll('details').forEach((d) => { d.open = true; }); document.querySelector('#plan-form').classList.remove('hidden'); });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), '폼 펼침 후 가로 스크롤 없음');
+  const overflow2 = await page.evaluate(() => [...document.querySelectorAll('.card, .form, .grid2, .grid3, .controls')].filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.id || e.className));
+  assert.deepEqual(overflow2, [], '폼 펼침 후 넘치는 영역 없음');
   if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/t06-ui-local-mobile.png`, fullPage: true });
   await page.setViewportSize({ width: 1280, height: 900 });
+});
+
+test('처음 방문(목록 접힘, 미리 펼침 없음): 개수·더 보기·검색·필터·완료·완료 취소', async () => {
+  const c = await browser.newContext({ viewport: { width: 1440, height: 900 } }); // sessionStorage 주입 없음
+  const p = await c.newPage();
+  const ok = () => p.waitForFunction(() => /불러옴|저장됨|중복/.test(document.querySelector('#status').textContent));
+  await p.goto(srv.url); await ok();
+  const counts = async () => p.evaluate(() => ({
+    open: +document.querySelector('#todo-open-count').textContent, done: +document.querySelector('#todo-done-count').textContent,
+    total: document.querySelector('#todo-total').textContent,
+    openVisible: document.querySelectorAll('#todo-open-list li.item:not(.hidden)').length,
+    openAll: document.querySelectorAll('#todo-open-list li.item').length,
+    more: document.querySelector('#todo-open-more')?.textContent || null }));
+  let k = await counts();
+  assert.equal(k.total, `전체 ${k.open + k.done}건`);
+  assert.equal(k.openAll, k.open);
+  assert.ok(k.openVisible >= 1 && k.openVisible <= 3);
+  if (k.open > k.openVisible) assert.equal(k.more, `남은 일 ${k.open - k.openVisible}건 더 보기`);
+  // 숨겨진 할 일도 검색으로 찾아진다
+  const hiddenTitle = await p.evaluate(() => document.querySelector('#todo-open-list li.item.hidden .title-line')?.textContent);
+  if (hiddenTitle) {
+    await p.fill('#todo-search', hiddenTitle.slice(0, 12));
+    assert.ok(await p.locator('#todo-open-list li.item:not(.hidden) .title-line', { hasText: hiddenTitle.slice(0, 12) }).count() >= 1, '검색 결과는 접힘과 무관하게 표시');
+    await p.fill('#todo-search', '');
+  }
+  // 상태 필터: 완료만
+  await p.selectOption('#todo-filter-status', 'done');
+  assert.equal(+await p.textContent('#todo-open-count'), 0);
+  assert.ok(+await p.textContent('#todo-done-count') >= 1);
+  await p.selectOption('#todo-filter-status', 'all');
+  // 접힌 상태에서 완료 → 개수 이동 → 완료 취소로 복구
+  const first = p.locator('#todo-open-list li.item:not(.hidden)').first();
+  const title = await first.locator('.title-line').textContent();
+  await first.locator('[data-action=complete]').click(); await ok();
+  k = await counts();
+  const before = k;
+  await p.fill('#todo-search', title.slice(0, 12));
+  const doneItem = p.locator('#todo-done-list li.item', { has: p.locator('.title-line', { hasText: title.slice(0, 12) }) }).first();
+  assert.equal(await doneItem.locator('.actions.secondary').isVisible(), false, '완료한 일의 보조 동작은 기본 숨김(마우스 환경)');
+  await doneItem.hover();
+  assert.ok(await doneItem.locator('.actions.secondary').isVisible(), '마우스를 올리면 보조 동작 표시');
+  await doneItem.locator('[data-action=reopen]').click(); await ok();
+  await p.fill('#todo-search', '');
+  k = await counts();
+  assert.equal(k.open, before.open + 1);
+  assert.equal(k.done, before.done - 1);
+  await c.close();
+});
+
+test('여러 화면 높이에서 첫 화면에 남은 일·완료한 일 첫 항목이 함께 보임', async () => {
+  for (const [w, h] of [[1366, 657], [1536, 730], [1440, 900], [1920, 1080]]) {
+    const c = await browser.newContext({ viewport: { width: w, height: h } });
+    const p = await c.newPage();
+    await p.goto(srv.url);
+    await p.waitForFunction(() => /불러옴/.test(document.querySelector('#status').textContent));
+    const r = await p.evaluate(() => {
+      const o = document.querySelector('#todo-open-list li.item:not(.hidden)');
+      const d = document.querySelector('#todo-done-list li.item:not(.hidden)');
+      const sortNote = document.querySelector('#sort-note').getBoundingClientRect();
+      return { openTop: o && o.getBoundingClientRect().top, doneBottom: d && d.getBoundingClientRect().bottom, vh: innerHeight, sortVisible: sortNote.height > 0 };
+    });
+    assert.ok(r.openTop !== null && r.openTop < r.vh, `${w}x${h}: 남은 일 첫 항목이 첫 화면에`);
+    assert.ok(r.doneBottom !== null && r.doneBottom <= r.vh, `${w}x${h}: 완료한 일 첫 항목 전체가 첫 화면에 (${r.doneBottom}/${r.vh})`);
+    assert.ok(r.sortVisible, `${w}x${h}: 정렬 기준 문구는 항상 표시`);
+    await c.close();
+  }
 });
 
 test('회고 시간 비율: 표시는 실제 비율(100% 초과 포함), 막대 너비만 100% 제한, 예상 0이면 0%', async () => {
