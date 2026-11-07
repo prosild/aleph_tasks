@@ -259,8 +259,8 @@
     const doneUl = clear($('#todo-done-list'));
     const list = visibleTodos();
     const openCount = list.filter((t) => t.status !== 'done').length;
-    $('#todo-open-title').textContent = `남은 일 (${openCount})`;
-    $('#todo-done-title').textContent = `완료한 일 (${list.length - openCount})`;
+    $('#todo-open-count').textContent = String(openCount);
+    $('#todo-done-count').textContent = String(list.length - openCount);
     const emptyMsg = state.todoEvidence ? '근거 기록이 없습니다(0건).' : '조건에 맞는 할 일이 없습니다.';
     if (!openCount) openUl.append(h('li', { class: 'hint' }, emptyMsg));
     if (openCount === list.length) doneUl.append(h('li', { class: 'hint' }, emptyMsg));
@@ -288,7 +288,7 @@
           h('button', { type: 'button', 'data-action': 'edit', onclick: () => editTodo(t.id) }, '수정'),
           h('button', { type: 'button', 'data-action': 'log', onclick: () => startExecFor(t.id) }, '실행 기록 추가'),
           execs.length ? h('button', { type: 'button', 'data-action': 'show-execs', onclick: () => showExecEvidence(`할 일 "${t.title}"의 실행 기록`, execs.map((e) => e.id)) }, '실행 기록 보기') : null,
-          h('button', { type: 'button', 'data-action': 'delete', onclick: () => deleteTodo(t.id, t.title) }, '삭제'),
+          h('button', { type: 'button', class: 'danger', 'data-action': 'delete', onclick: () => deleteTodo(t.id, t.title) }, '삭제'),
         )));
     }
   }
@@ -317,9 +317,12 @@
     if (state.execEvidence) list = list.filter((e) => state.execEvidence.ids.has(e.id));
     list.sort((a, b) => cmp(a, b, [['started_at', -1], ['id', 1]]));
     if (!list.length) ul.append(h('li', { class: 'hint' }, state.execEvidence ? '근거 기록이 없습니다(0건).' : '아직 실행 기록이 없습니다.'));
-    for (const e of list) {
+    // 기본은 최근 3건만 보여 주고 나머지는 "더 보기"로 펼친다(근거 표시 중에는 전부 표시).
+    const SHOW = 3;
+    const folded = !state.execEvidence && !state.execShowAll && list.length > SHOW;
+    list.forEach((e, i) => {
       const t = todoById(e.todo_id);
-      ul.append(h('li', { class: `item${state.execEvidence ? ' highlight' : ''}`, id: `exec-${e.id}`, 'data-exec-id': e.id },
+      ul.append(h('li', { class: `item${state.execEvidence ? ' highlight' : ''}${folded && i >= SHOW ? ' hidden' : ''}`, id: `exec-${e.id}`, 'data-exec-id': e.id },
         h('div', { class: 'title-line' }, h('span', { class: 'sub-label' }, '연결된 할 일: '),
           t.deleted_at ? h('span', {}, `${t.title} (삭제된 할 일)`)
             : h('a', { href: `#todo-${t.id}`, onclick: (ev) => { ev.preventDefault(); showTodoEvidence(`실행 기록의 할 일`, [t.id]); } }, t.title)),
@@ -329,6 +332,11 @@
           h('span', { 'data-field': 'actual_minutes', class: 'strong' }, `실제 ${min(e.actual_minutes)}`)),
         e.note ? h('div', { class: 'memo' }, `메모: ${e.note}`) : null,
         h('div', { class: e.blocker ? 'blocker' : 'meta', 'data-field': 'blocker' }, e.blocker ? `막힘 사유: ${e.blocker}` : '막힘 없음')));
+    });
+    if (!state.execEvidence && list.length > SHOW) {
+      ul.append(h('li', { class: 'more-row' }, h('button', { type: 'button', class: 'more-btn', id: 'exec-more-btn',
+        onclick: () => { state.execShowAll = !state.execShowAll; renderExecs(); } },
+        state.execShowAll ? '최근 3건만 보기' : `이전 실행 기록 ${list.length - SHOW}건 더 보기`)));
     }
   }
 
@@ -338,7 +346,8 @@
     if (!p) { $('#stats-caption').textContent = ''; return; }
     const s = p.stats;
     $('#stats-caption').textContent = `선택한 계획의 삭제되지 않은 할 일 기준 · 지연 기준일 ${s.seoul_today}(서울) · 숫자를 누르면 근거 기록으로 이동`;
-    const card = (key, label, value, onClick) => h('button', { type: 'button', class: 'stat', 'data-stat': key, onclick: onClick },
+    const tone = { done: s.done_count > 0 ? 'good' : '', overdue: s.overdue_count > 0 ? 'bad' : '', blocked: s.blocked_count > 0 ? 'warn' : '', diff: s.diff_minutes > 0 ? 'bad' : '' };
+    const card = (key, label, value, onClick) => h('button', { type: 'button', class: `stat ${tone[key] || ''}`, 'data-stat': key, onclick: onClick },
       h('span', { class: 'num' }, value), h('span', { class: 'lbl' }, label));
     const todoEv = (label, ids) => () => showTodoEvidence(label, ids);
     box.append(
