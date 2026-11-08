@@ -17,9 +17,10 @@ const acc = t.remote ? all?.remote : all?.local;
 if (!acc) throw new Error(`시험 계정 파일이 없습니다: ${ACCOUNTS_FILE}`);
 const PW = acc.password;
 const NEW_PW = `${PW}-changed`;
+let curPw = PW; // 비밀번호 변경 시험 뒤에는 NEW_PW
 const local = !t.remote;
 const evidence = [];
-const EVIDENCE_FILE = process.env.T07_EVIDENCE_FILE || path.resolve(APP_ROOT, '..', '..', '..', '..', '..', `T07_AUTH_EVIDENCE_${t.remote ? 'REMOTE' : 'LOCAL'}.json`);
+const EVIDENCE_FILE = process.env.T07_EVIDENCE_FILE || path.resolve(APP_ROOT, '..', '..', '..', '..', '..', `T07_AUTH_EVIDENCE_${t.remote ? 'REMOTE' : 'LOCAL'}${process.env.T07_RUN_LABEL ? `_${process.env.T07_RUN_LABEL}` : ''}.json`);
 const secrets = [PW, NEW_PW];
 
 function rec(id, title, res, note) {
@@ -35,7 +36,7 @@ const day = '2026-11-08';
 const planBody = (title) => ({ p_title: title, p_description: '시험 전용', p_start_date: day, p_end_date: day, p_priority: 2, p_success_criteria: '시험', p_estimated_minutes: 30 });
 const todoBody = (planId, title) => ({ p_plan_id: planId, p_title: title, p_memo: '', p_due_date: day, p_priority: 2, p_tags: ['test'], p_estimated_minutes: 20 });
 
-async function login(who, pw = PW) {
+async function login(who, pw = curPw) {
   const r = await c.signIn(acc[who].email, pw);
   ok(r);
   return { token: r.body.access_token, refresh: r.body.refresh_token, user: r.body.user, raw: r };
@@ -222,8 +223,9 @@ test('C114: 비밀번호를 직접 Auth API 로 바꾸면(로그아웃 호출 �
   const ok2 = rec('C114-new-session', '새 비밀번호로 다시 로그인 후 같은 요청', await c.rpc(fresh.token, 'pds7_snapshot'));
   assert.equal(ok2.status, 200);
   S.a = { ...S.a, ...fresh };
+  curPw = NEW_PW;
   // B 도 같은 새 비밀번호로 바꿔 GoTrue 가 만든 해시끼리 비교한다(C104)
-  const bs = await login('b');
+  const bs = await login('b', PW);
   ok(await c.updatePassword(bs.token, NEW_PW));
   S.b = { ...S.b, ...(await login('b', NEW_PW)) };
   const saved = loadAccounts();
@@ -284,7 +286,8 @@ test('트리거 범위(로컬 SQL): T07 회원이 아닌 계정의 비밀번호 
   sql(`delete from auth.users where id = :'id';`, { id });
 });
 
-test('C134: 계정 삭제 — 확인 문구·최근 재로그인 필요, 삭제 후 계정·자료·세션 모두 사라지고 A 는 그대로', async () => {
+// 원격에서는 해시 증거(C103·C104)를 관리자 SQL 로 먼저 받은 뒤 T07_RUN_DELETE=1 로 따로 실행한다
+test('C134: 계정 삭제 — 확인 문구·최근 재로그인 필요, 삭제 후 계정·자료·세션 모두 사라지고 A 는 그대로', { skip: t.remote && !process.env.T07_RUN_DELETE }, async () => {
   const beforeA = await ownView(S.a.token);
   const bad = rec('C134-wrong-confirm', '확인 문구 없이 삭제 요청', await c.rpc(S.b.token, 'pds7_delete_account', { p_confirm: '' }));
   assert.equal(bad.status, 400);
@@ -296,13 +299,13 @@ test('C134: 계정 삭제 — 확인 문구·최근 재로그인 필요, 삭제 
     const stale = rec('C134-stale-session', '로그인한 지 5분 넘은 세션으로 삭제 요청', await c.rpc(S.b.token, 'pds7_delete_account', { p_confirm: '계정 삭제' }));
     assert.equal(stale.status, 403);
   }
-  const fresh = await login('b', NEW_PW);
+  const fresh = await login('b');
   const other = rec('C134-delete', '비밀번호로 다시 로그인한 직후 삭제 요청', await c.rpc(fresh.token, 'pds7_delete_account', { p_confirm: '계정 삭제' }));
   assert.equal(other.status, 200);
   assert.equal(other.body.deleted, true);
   const after1 = rec('C134-token-after', '삭제 뒤 같은 토큰으로 요청', await c.rpc(fresh.token, 'pds7_snapshot'));
   assert.equal(after1.status, 401);
-  const after2 = rec('C134-login-after', '삭제 뒤 같은 이메일·비밀번호로 로그인', await c.signIn(acc.b.email, NEW_PW));
+  const after2 = rec('C134-login-after', '삭제 뒤 같은 이메일·비밀번호로 로그인', await c.signIn(acc.b.email, curPw));
   assert.equal(after2.status, 400);
   assert.deepEqual(await ownView(S.a.token), beforeA, '다른 계정 자료는 그대로');
   if (local) {

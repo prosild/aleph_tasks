@@ -8,6 +8,33 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- 로그인 전 화면: 결과물 주소의 첫 화면 -->
+  <main id="auth-view" class="auth-wrap hidden">
+    <section class="card auth-card" aria-labelledby="auth-title">
+      <h1 id="auth-title">Plan-Do-See 다이어리</h1>
+      <p class="tagline">계획하고, 실행을 기록하고, 회고로 다음 계획을 고칩니다</p>
+      <p id="auth-msg" class="status auth-msg hidden" role="status" aria-live="polite"></p>
+      <div class="tabs" role="tablist" aria-label="로그인 또는 회원 가입">
+        <button type="button" role="tab" id="tab-login" aria-selected="true" aria-controls="login-form">로그인</button>
+        <button type="button" role="tab" id="tab-signup" aria-selected="false" aria-controls="signup-form">회원 가입</button>
+      </div>
+      <form id="login-form" class="form" role="tabpanel" aria-labelledby="tab-login">
+        <label>이메일 <input name="email" type="email" autocomplete="username" required maxlength="254"></label>
+        <label>비밀번호 <input name="password" type="password" autocomplete="current-password" required maxlength="72"></label>
+        <button type="submit" class="primary">로그인</button>
+      </form>
+      <form id="signup-form" class="form hidden" role="tabpanel" aria-labelledby="tab-signup">
+        <label>이메일 <input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+        <label>비밀번호 (8자 이상) <input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label>
+        <label>비밀번호 확인 <input name="password2" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label>
+        <button type="submit" class="primary">가입하기</button>
+        <p class="hint">가입하면 확인 메일이 갑니다. 메일의 링크를 누른 뒤 여기서 로그인하세요.</p>
+      </form>
+      <p class="notice">내 기록은 로그인한 본인만 볼 수 있습니다.</p>
+    </section>
+  </main>
+
+  <div id="app-view" class="hidden">
   <header class="top">
     <div class="top-row">
       <div class="brand">
@@ -17,14 +44,84 @@
       <div class="toolbar">
         <span id="status" class="status" role="status" aria-live="polite">불러오는 중…</span>
         <button type="button" id="reload-btn">새로고침</button>
-        <button type="button" id="export-btn">전체 데이터 내보내기(JSON)</button>
+        <button type="button" id="export-btn" title="내 자료 전체를 JSON 파일 하나로 받습니다">내보내기(JSON)</button>
+        <button type="button" id="logout-btn">로그아웃</button>
+        <details id="account-menu" class="account">
+          <summary class="account-btn">내 계정</summary>
+          <div class="account-panel">
+            <p class="account-who">로그인한 계정 <strong id="account-email"></strong></p>
+            <form id="password-form" class="form" autocomplete="off">
+              <h3>비밀번호 변경</h3>
+              <label>새 비밀번호 (8자 이상) <input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label>
+              <label>새 비밀번호 확인 <input name="password2" type="password" autocomplete="new-password" required minlength="8" maxlength="72"></label>
+              <p class="hint">바꾸면 이 기기와 다른 기기의 로그인이 모두 끝납니다. 새 비밀번호로 다시 로그인하세요.</p>
+              <button type="submit" class="primary">비밀번호 변경</button>
+            </form>
+            <form id="delete-form" class="form danger-zone" autocomplete="off">
+              <h3>계정 삭제</h3>
+              <p class="hint">계정을 지우면 이 다이어리의 내 기록(계획·할 일·실행·회고·5일 관찰)도 함께 지워지고 되돌릴 수 없습니다. 필요하면 먼저 내보내기로 보관하세요.</p>
+              <label>현재 비밀번호 <input name="password" type="password" autocomplete="current-password" required maxlength="72"></label>
+              <label>확인 문구 (“계정 삭제”를 그대로 입력) <input name="confirm" required maxlength="20"></label>
+              <button type="submit" class="danger">계정과 내 기록 삭제</button>
+            </form>
+          </div>
+        </details>
       </div>
     </div>
-    <p class="notice" id="public-notice" role="note">지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요</p>
   </header>
+
 
   <main class="layout">
     <div class="col-left">
+      <!-- 5일 관찰 -->
+      <details id="obs-section" class="card sec sec-obs">
+        <summary class="obs-summary">
+          <span class="eyebrow">5일 관찰</span>
+          <h2 id="obs-title">계획 규칙 바꿔 보기</h2>
+          <span class="count" id="obs-progress"></span>
+          <span class="obs-today" id="obs-today"></span>
+        </summary>
+        <div id="obs-body"></div>
+        <form id="obs-form" class="form hidden" autocomplete="off">
+          <h3>1일차 전에 한 번 정하기</h3>
+          <label>5일 동안 답할 질문 한 문장 <input name="question" required maxlength="300"></label>
+          <div class="grid2">
+            <label>측정 지표 <input name="metric" required maxlength="100"></label>
+            <label>측정 단위
+              <select name="unit" required>
+                <option value="">고르세요</option>
+                <option>완료 과제 수(개)</option><option>시간(분)</option><option>항목 수(개)</option><option>비율 구간(%)</option><option>그 밖의 개수</option>
+              </select>
+            </label>
+          </div>
+          <label>하루 값 계산 규칙 <input name="calc_rule" required maxlength="500"></label>
+          <div class="grid3">
+            <label>이상값 기준: 최솟값 <input name="outlier_min" type="number" step="0.01" required></label>
+            <label>이상값 기준: 최댓값 <input name="outlier_max" type="number" step="0.01" required></label>
+            <label>평균 반올림
+              <select name="rounding_digits"><option value="0">정수로</option><option value="1" selected>소수 첫째 자리까지</option><option value="2">소수 둘째 자리까지</option></select>
+            </label>
+            <label>주 시작 요일 <select name="week_start"><option>월요일</option><option>일요일</option></select></label>
+          </div>
+          <label>지금 쓰는 계획 규칙(바꾸기 전) <input name="plan_rule" required maxlength="500"></label>
+          <p class="hint">빠진 날은 합계·평균에서 빼고 기록한 날 수로 나눕니다. 같은 날 다시 저장하면 그날 값만 바뀝니다. 이상값 기준 밖의 값은 저장하지 않습니다. 첫 기록을 남긴 뒤에는 바꿀 수 없습니다.</p>
+          <button type="submit" class="primary">관찰 설정 저장</button>
+        </form>
+        <form id="log-form" class="form inline hidden" autocomplete="off">
+          <div class="grid2">
+            <label><span id="log-label">오늘 값</span> <input name="value" type="number" step="0.01" required></label>
+            <label>메모 <input name="note" maxlength="500"></label>
+          </div>
+          <button type="submit" class="primary">오늘 기록 저장</button>
+        </form>
+        <form id="rule-form" class="form hidden" autocomplete="off">
+          <h3>3일차 전에 계획 규칙 한 가지 바꾸기</h3>
+          <label>바꾼 계획 규칙 <input name="new_rule" required maxlength="500"></label>
+          <label>바꾼 이유 <input name="reason" required maxlength="500"></label>
+          <p class="hint">한 번만 바꿀 수 있고, 저장한 시각이 기록됩니다.</p>
+          <button type="submit" class="primary">규칙 변경 저장</button>
+        </form>
+      </details>
       <!-- PLAN -->
       <section id="plan-section" class="card sec sec-plan">
         <div class="section-head">
@@ -168,7 +265,9 @@
   <footer class="foot">
     <p>날짜는 서울 시간(Asia/Seoul) 기준으로 표시하며, 시간 단위는 모두 분입니다.</p>
   </footer>
+  </div>
 
+  <script src="vendor/supabase.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>

@@ -1,0 +1,12 @@
+{
+  "name": "t07-vendor",
+  "private": true,
+  "description": "브라우저에 자체 제공하는 고정 버전 라이브러리. vendor/supabase.js 는 이 lockfile 의 패키지에서 복사한다(npm run vendor).",
+  "scripts": {
+    "vendor": "node copy.mjs",
+    "verify": "node copy.mjs --verify"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.118.0"
+  }
+}

@@ -1,14 +1,13 @@
 {
-  "name": "t06-pds-diary-tests",
+  "name": "t07-pds-auth-tests",
   "private": true,
   "type": "module",
   "scripts": {
-    "test:db": "node --test db.test.mjs",
+    "test:auth": "node --test auth.test.mjs",
     "test:e2e": "node --test e2e.test.mjs",
-    "test:live": "node --test live.test.mjs"
+    "test:auth-ui": "node --test auth-ui.test.mjs"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.5.11",
     "playwright": "1.64.1"
   }
 }

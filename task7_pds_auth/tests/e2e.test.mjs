@@ -1,10 +1,11 @@
-// 브라우저 E2E: 실제 화면(index.html/app.js)을 Chrome 으로 조작하고, 로컬 PGlite DB(같은 스키마 SQL)에 저장·재조회한다.
-// 실행: npm run test:e2e  (BASE_URL 을 주면 그 주소의 배포본을 대상으로 읽기 전용 확인만 한다)
+// T06 화면 회귀 시험(T07 확장본): 로컬 Supabase 스택에 새 시험 계정으로 로그인한 뒤 T06 의 계획·할 일·실행·회고 흐름을 그대로 확인한다.
+// 실행: supabase start 후 npm run test:e2e
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { startServer } from './server.mjs';
+import { newLocalUser, uiLogin } from './ui-auth.mjs';
 
 let srv, browser, page, ctx;
 const dialogs = [];
@@ -12,10 +13,12 @@ const consoleErrors = [];
 const seoulToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
 const addDays = (ymd, n) => { const d = new Date(`${ymd}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const T = seoulToday();
-const NOTICE = '지금은 로그인이 없어 링크를 아는 사람은 누구나 볼 수 있습니다. 남이 봐도 괜찮은 내용만 넣으세요';
+let AUTH; // 로그인한 브라우저 저장 상태(새 컨텍스트에서 같은 계정으로 열기)
+let USER;
 
 before(async () => {
   srv = await startServer(0);
+  USER = newLocalUser('e2e');
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   ctx = await browser.newContext({ acceptDownloads: true, locale: 'ko-KR', timezoneId: 'America/Los_Angeles' }); // 브라우저 시간대가 달라도 서울 기준이어야 함
   // 기존 기능 테스트는 할 일 목록을 모두 펼친 상태(사용자가 '더 보기'를 누른 상태)에서 진행한다.
@@ -24,7 +27,9 @@ before(async () => {
   page.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
   await page.goto(srv.url);
+  await uiLogin(page, USER);
   await waitOk();
+  AUTH = await ctx.storageState();
 });
 after(async () => { await browser?.close(); srv?.server.close(); });
 
@@ -34,7 +39,8 @@ async function waitOk() {
 async function status() { return page.textContent('#status'); }
 const snap = async () => page.evaluate(async () => {
   const c = window.PDS_CONFIG;
-  const r = await fetch(`${c.supabaseUrl}/rest/v1/rpc/pds_snapshot`, { method: 'POST', headers: { apikey: c.publishableKey, 'Content-Type': 'application/json' }, body: '{}' });
+  const k = Object.keys(localStorage).find((x) => /^sb-.*-auth-token$/.test(x));
+  const r = await fetch(`${c.supabaseUrl}/rest/v1/rpc/pds7_snapshot`, { method: 'POST', headers: { apikey: c.publishableKey, Authorization: `Bearer ${JSON.parse(localStorage.getItem(k)).access_token}`, 'Content-Type': 'application/json' }, body: '{}' });
   return r.json();
 });
 // 접힌 입력 영역(details)은 사용자처럼 요약 줄을 눌러 펼친다.
@@ -53,9 +59,10 @@ async function fill(form, values) {
 async function submit(form) { await page.click(`${form} button[type=submit]`); await waitOk(); }
 const todoItem = (title) => page.locator('#todo-list li.item', { has: page.locator('.title-line', { hasText: title }) });
 
-test('C82: 첫 화면에 공개 범위 안내 문구가 그대로 보인다', async () => {
-  assert.equal((await page.textContent('#public-notice')).trim(), NOTICE);
-  assert.ok(await page.isVisible('#public-notice'));
+test('T07: 로그인 뒤 첫 화면에 내 계정과 로그아웃이 보이고 공개 안내 문구는 없다', async () => {
+  assert.equal((await page.textContent('#account-email')).trim(), USER.email);
+  assert.ok(await page.isVisible('#logout-btn'));
+  assert.equal(await page.locator('#public-notice').count(), 0);
 });
 
 test('C04~C08: 계획 등록 → 수정 → 최초 계획이 이력에 보존', async () => {
@@ -152,7 +159,7 @@ test('C21·C22: 완료 버튼을 연속 두 번 눌러도 완료 기록 1건, �
   const evBefore = before.completion_events.filter((e) => e.todo_id === gammaId).length;
   // 버튼 비활성화가 아니라 서버 멱등성으로 막는지 보기 위해, 렌더링 전에 같은 버튼을 두 번 클릭한다.
   const reqs = [];
-  page.on('request', (r) => { if (r.url().endsWith('/pds_complete_todo')) reqs.push(r.postData()); });
+  page.on('request', (r) => { if (r.url().endsWith('/pds7_complete_todo')) reqs.push(r.postData()); });
   await todoItem('[E2E] 감마').locator('[data-action=complete]').evaluate((b) => { b.click(); b.click(); });
   await page.waitForFunction(() => /완료 처리 저장됨|중복/.test(document.querySelector('#status').textContent));
   await page.waitForTimeout(300);
@@ -248,7 +255,7 @@ test('C57: 스크립트 형태 문자열이 실행되지 않고 텍스트로 보
 
 test('C35·C36: 새로고침·새 브라우저 컨텍스트에서 같은 값 복원, 전체 JSON 한 파일 내보내기', async () => {
   const before = await snap();
-  const ctx2 = await browser.newContext({ acceptDownloads: true, timezoneId: 'Asia/Seoul' });
+  const ctx2 = await browser.newContext({ acceptDownloads: true, timezoneId: 'Asia/Seoul', storageState: AUTH });
   const p2 = await ctx2.newPage();
   await p2.goto(`${srv.url}#plan=${before.plans[0].id}`);
   await p2.waitForFunction(() => /불러옴/.test(document.querySelector('#status').textContent));
@@ -258,8 +265,8 @@ test('C35·C36: 새로고침·새 브라우저 컨텍스트에서 같은 값 복
   const [dl] = await Promise.all([p2.waitForEvent('download'), p2.click('#export-btn')]);
   const file = await dl.path();
   const data = JSON.parse(await readFile(file, 'utf8'));
-  assert.match(dl.suggestedFilename(), /^pds-export-.*\.json$/);
-  assert.equal(data.schema, 'pds-schema-v2');
+  assert.match(dl.suggestedFilename(), /^pds7-export-.*\.json$/);
+  assert.equal(data.schema, 'pds7-schema-v1');
   assert.equal(data.time_unit, 'minutes');
   for (const k of ['plans', 'plan_revisions', 'todos', 'completion_events', 'executions', 'reviews']) assert.ok(data[k].length > 0, k);
   assert.deepEqual(data.todos.map((t) => [t.id, t.due_date, t.estimated_minutes, t.status]), before.todos.map((t) => [t.id, t.due_date, t.estimated_minutes, t.status]));
@@ -267,7 +274,7 @@ test('C35·C36: 새로고침·새 브라우저 컨텍스트에서 같은 값 복
 });
 
 test('UI: 처음 연 데스크톱 첫 화면에 남은 일·완료한 일이 함께 보임(더 보기)', async () => {
-  const c = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const c = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: AUTH });
   const p = await c.newPage();
   await p.goto(srv.url);
   await p.waitForFunction(() => /불러옴/.test(document.querySelector('#status').textContent));
@@ -293,7 +300,7 @@ test('UI: 데스크톱 2열(할 일 오른쪽)·남은 일/완료한 일 분리�
   const plan = await page.locator('#plan-section').boundingBox();
   const todo = await page.locator('#todo-section').boundingBox();
   assert.ok(todo.x > plan.x + plan.width - 1, '할 일 영역이 오른쪽');
-  assert.ok(await page.isVisible('#public-notice'), '필수 안내는 첫 화면에 보임');
+  assert.ok(await page.isVisible('#logout-btn'), '로그아웃은 첫 화면에 보임');
   assert.equal(await page.isVisible('[data-field=id]'), false, '계획 ID 는 기본으로 접힘');
   await page.click('#plan-more > summary');
   assert.ok(await page.isVisible('[data-field=id]'), '상세를 펼치면 ID 확인 가능');
@@ -335,7 +342,7 @@ test('UI: 모바일 폭 한 열·가로 스크롤 없음', async () => {
 });
 
 test('처음 방문(목록 접힘, 미리 펼침 없음): 개수·더 보기·검색·필터·완료·완료 취소', async () => {
-  const c = await browser.newContext({ viewport: { width: 1440, height: 900 } }); // sessionStorage 주입 없음
+  const c = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: AUTH }); // sessionStorage 주입 없음
   const p = await c.newPage();
   const ok = () => p.waitForFunction(() => /불러옴|저장됨|중복/.test(document.querySelector('#status').textContent));
   await p.goto(srv.url); await ok();
@@ -383,7 +390,7 @@ test('처음 방문(목록 접힘, 미리 펼침 없음): 개수·더 보기·�
 
 test('여러 화면 높이에서 첫 화면에 남은 일·완료한 일 첫 항목이 함께 보임', async () => {
   for (const [w, h] of [[1366, 657], [1536, 730], [1440, 900], [1920, 1080]]) {
-    const c = await browser.newContext({ viewport: { width: w, height: h } });
+    const c = await browser.newContext({ viewport: { width: w, height: h }, storageState: AUTH });
     const p = await c.newPage();
     await p.goto(srv.url);
     await p.waitForFunction(() => /불러옴/.test(document.querySelector('#status').textContent));
@@ -403,12 +410,13 @@ test('여러 화면 높이에서 첫 화면에 남은 일·완료한 일 첫 항
 test('회고 시간 비율: 표시는 실제 비율(100% 초과 포함), 막대 너비만 100% 제한, 예상 0이면 0%', async () => {
   const rpc = (fn, body) => page.evaluate(async ([fn, body]) => {
     const c = window.PDS_CONFIG;
-    const r = await fetch(`${c.supabaseUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: c.publishableKey, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const k = Object.keys(localStorage).find((x) => /^sb-.*-auth-token$/.test(x));
+    const r = await fetch(`${c.supabaseUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: c.publishableKey, Authorization: `Bearer ${JSON.parse(localStorage.getItem(k)).access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     return r.json();
   }, [fn, body]);
-  const mkPlan = (title) => rpc('pds_create_plan', { p_title: title, p_description: '', p_start_date: T, p_end_date: addDays(T, 3), p_priority: 2, p_success_criteria: '합성', p_estimated_minutes: 100 });
-  const mkTodo = (plan, est) => rpc('pds_create_todo', { p_plan_id: plan, p_title: '[합성] 할 일', p_memo: '', p_due_date: addDays(T, 1), p_priority: 2, p_tags: [], p_estimated_minutes: est });
-  const exec = (todo, m) => rpc('pds_add_execution', { p_todo_id: todo, p_started_at: `${T}T09:00:00+09:00`, p_ended_at: `${T}T11:00:00+09:00`, p_actual_minutes: m });
+  const mkPlan = (title) => rpc('pds7_create_plan', { p_title: title, p_description: '', p_start_date: T, p_end_date: addDays(T, 3), p_priority: 2, p_success_criteria: '합성', p_estimated_minutes: 100 });
+  const mkTodo = (plan, est) => rpc('pds7_create_todo', { p_plan_id: plan, p_title: '[합성] 할 일', p_memo: '', p_due_date: addDays(T, 1), p_priority: 2, p_tags: [], p_estimated_minutes: est });
+  const exec = (todo, m) => rpc('pds7_add_execution', { p_todo_id: todo, p_started_at: `${T}T09:00:00+09:00`, p_ended_at: `${T}T11:00:00+09:00`, p_actual_minutes: m });
   const over = await mkPlan('[합성] 초과'); await exec(await mkTodo(over, 60), 90);       // 150%
   const normal = await mkPlan('[합성] 일반'); await exec(await mkTodo(normal, 120), 60);  // 50%
   const empty = await mkPlan('[합성] 빈 계획');                                            // 예상 0 → 0%

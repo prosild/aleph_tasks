@@ -81,16 +81,40 @@
   const min = (n) => `${Number(n).toLocaleString('ko-KR')}분`;
   const seoulLocalToIso = (v) => (v ? `${v}:00+09:00` : null); // datetime-local 값을 서울 시각으로 해석
 
+  // ───────── 인증 (Supabase Auth, supabase-js 고정 버전 자체 제공) ─────────
+  // flowType 'pkce': 확인 메일 링크가 돌아올 때 주소에 세션 토큰 대신 1회용 코드만 붙는다.
+  // detectSessionInUrl false: 주소의 코드로 자동 로그인하지 않고(주소에서 지운 뒤) 비밀번호 로그인을 받는다.
+  const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.publishableKey, {
+    auth: { flowType: 'pkce', detectSessionInUrl: false, persistSession: true, autoRefreshToken: true },
+  });
+  let session = null;
+
+  // 로그인 실패 문구: 없는 계정·틀린 비밀번호를 구분하지 않는다
+  function authErrorText(e, action) {
+    const code = e?.code || '';
+    if (code === 'email_not_confirmed') return '이메일 확인을 먼저 마치세요. 받은 메일의 링크를 누른 뒤 로그인하세요.';
+    if (code === 'user_already_exists') return '이미 가입된 이메일입니다. 로그인하세요.';
+    if (code === 'weak_password') return '비밀번호가 너무 약합니다. 더 길고 추측하기 어렵게 정하세요.';
+    if (code === 'same_password') return '지금 비밀번호와 다른 비밀번호를 입력하세요.';
+    if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit' || e?.status === 429) return '요청이 많습니다. 잠시 후 다시 시도하세요.';
+    if (code === 'validation_failed' || code === 'email_address_invalid') return '이메일 형식을 확인하세요.';
+    if (action === 'login') return '이메일 또는 비밀번호가 맞지 않습니다.';
+    return `${action === 'signup' ? '가입' : '요청'}을 처리하지 못했습니다. 잠시 후 다시 시도하세요.`;
+  }
+
   // ───────── API ─────────
+  class ApiError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
   async function rpc(fn, body = {}) {
     if (!cfg.supabaseUrl || !cfg.publishableKey || cfg.publishableKey.startsWith('__')) {
       throw new Error('서버 연결 설정(config.js)이 비어 있습니다');
     }
+    const { data: { session: s } } = await sb.auth.getSession(); // 만료가 가까우면 새로 받아 온다
+    if (!s) { signedOut('로그인이 필요합니다.'); throw new ApiError('로그인이 필요합니다', 401); }
     let res;
     try {
       res = await fetch(`${cfg.supabaseUrl}/rest/v1/rpc/${fn}`, {
         method: 'POST',
-        headers: { apikey: cfg.publishableKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { apikey: cfg.publishableKey, Authorization: `Bearer ${s.access_token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body),
         cache: 'no-store',
       });
@@ -100,9 +124,14 @@
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+    if (res.status === 401) {
+      // 로그아웃·비밀번호 변경·계정 삭제로 서버가 세션을 끊었다 → 화면의 내 자료를 지우고 로그인 화면으로
+      signedOut('로그인이 끝났습니다. 다시 로그인하세요.');
+      throw new ApiError('로그인이 필요합니다', 401);
+    }
     if (!res.ok) {
-      const msg = (data && data.message) || `HTTP ${res.status}`;
-      throw new Error(msg);
+      const msg = res.status === 404 ? ((data && data.message) || '찾을 수 없습니다') : ((data && data.message) || `HTTP ${res.status}`);
+      throw new ApiError(msg, res.status);
     }
     return data;
   }
@@ -116,7 +145,7 @@
       setStatus(`${label} 저장됨 (서버 DB)`, 'ok');
       return out;
     } catch (e) {
-      setStatus(`${label} 실패: ${e.message}`, 'error');
+      if (e.status !== 401) setStatus(`${label} 실패: ${e.message}`, 'error');
       throw e;
     } finally {
       state.busy--;
@@ -126,9 +155,9 @@
   async function load(announce = true) {
     if (announce) setStatus('서버에서 불러오는 중…');
     try {
-      state.snap = await rpc('pds_snapshot');
+      state.snap = await rpc('pds7_snapshot');
     } catch (e) {
-      setStatus(`불러오기 실패: ${e.message} — 저장된 데이터를 표시하지 못했습니다`, 'error');
+      if (e.status !== 401) setStatus(`불러오기 실패: ${e.message} — 저장된 데이터를 표시하지 못했습니다`, 'error');
       throw e;
     }
     const plans = state.snap.plans;
@@ -160,6 +189,7 @@
 
   // ───────── 렌더링 ─────────
   function render() {
+    renderObservation();
     renderPlanSelect();
     renderPlanDetail();
     renderRevisions();
@@ -511,11 +541,11 @@
     };
     if (state.planFormMode === 'edit') {
       const p = curPlan();
-      await mutate('계획 수정', () => rpc('pds_update_plan', { p_plan_id: p.id, p_expected_version: p.version, ...body, p_change_note: v('change_note') })).catch(() => null);
+      await mutate('계획 수정', () => rpc('pds7_update_plan', { p_plan_id: p.id, p_expected_version: p.version, ...body, p_change_note: v('change_note') })).catch(() => null);
       if (!$('#status').classList.contains('error')) closePlanForm(), render();
     } else {
       if (state.sourceReviewId) body.p_source_review_id = state.sourceReviewId;
-      const id = await mutate('계획 등록', () => rpc('pds_create_plan', body)).catch(() => null);
+      const id = await mutate('계획 등록', () => rpc('pds7_create_plan', body)).catch(() => null);
       if (id) selectPlan(id, 'plan-section');
     }
   }
@@ -553,8 +583,8 @@
       p_tags: f.elements.tags.value.split(',').map((s) => s.trim()).filter(Boolean),
     };
     try {
-      if (state.editingTodoId) await mutate('할 일 수정', () => rpc('pds_update_todo', { p_todo_id: state.editingTodoId, ...body }));
-      else await mutate('할 일 추가', () => rpc('pds_create_todo', { p_plan_id: state.planId, ...body }));
+      if (state.editingTodoId) await mutate('할 일 수정', () => rpc('pds7_update_todo', { p_todo_id: state.editingTodoId, ...body }));
+      else await mutate('할 일 추가', () => rpc('pds7_create_todo', { p_plan_id: state.planId, ...body }));
       resetTodoForm();
     } catch { /* 상태 표시줄에 오류 표시됨 */ }
   }
@@ -562,16 +592,16 @@
     // 같은 할 일의 완료 의도는 하나의 멱등성 키를 공유한다. 연속 클릭·재전송에도 서버가 1건만 기록한다.
     if (!state.completeKeys.has(id)) state.completeKeys.set(id, crypto.randomUUID());
     const key = state.completeKeys.get(id);
-    const r = await mutate('완료 처리', () => rpc('pds_complete_todo', { p_todo_id: id, p_idempotency_key: key })).catch(() => null);
+    const r = await mutate('완료 처리', () => rpc('pds7_complete_todo', { p_todo_id: id, p_idempotency_key: key })).catch(() => null);
     if (r && !r.created) setStatus(`완료 요청이 중복되어 새 기록을 만들지 않았습니다 (${r.reason})`, 'ok');
   }
   async function reopenTodo(id) {
-    await mutate('완료 취소', () => rpc('pds_reopen_todo', { p_todo_id: id })).catch(() => null);
+    await mutate('완료 취소', () => rpc('pds7_reopen_todo', { p_todo_id: id })).catch(() => null);
     state.completeKeys.delete(id); // 다시 완료하면 새 의도 → 새 키
   }
   async function deleteTodo(id, title) {
     if (!window.confirm(`"${title}" 할 일을 삭제할까요? (실행 기록은 보존되고 회고 집계에서 제외됩니다)`)) return;
-    await mutate('할 일 삭제', () => rpc('pds_delete_todo', { p_todo_id: id })).catch(() => null);
+    await mutate('할 일 삭제', () => rpc('pds7_delete_todo', { p_todo_id: id })).catch(() => null);
   }
 
   // ───────── 실행 기록 ─────────
@@ -596,7 +626,7 @@
     ev.preventDefault();
     const f = ev.target;
     try {
-      await mutate('실행 기록', () => rpc('pds_add_execution', {
+      await mutate('실행 기록', () => rpc('pds7_add_execution', {
         p_todo_id: f.elements.todo_id.value, p_started_at: seoulLocalToIso(f.elements.started_at.value),
         p_ended_at: seoulLocalToIso(f.elements.ended_at.value), p_actual_minutes: Number(f.elements.actual_minutes.value),
         p_blocker: f.elements.blocker.value, p_note: f.elements.note.value,
@@ -613,7 +643,7 @@
     ev.preventDefault();
     const f = ev.target;
     try {
-      await mutate('회고', () => rpc('pds_create_review', { p_plan_id: state.planId, p_improvement: f.elements.improvement.value }));
+      await mutate('회고', () => rpc('pds7_create_review', { p_plan_id: state.planId, p_improvement: f.elements.improvement.value }));
       f.reset();
     } catch { /* 상태 표시줄 */ }
   }
@@ -622,20 +652,272 @@
   async function exportAll() {
     setStatus('내보내기 준비 중…');
     try {
-      const data = await rpc('pds_snapshot');
+      const data = await rpc('pds7_snapshot');
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const stamp = String(data.generated_at).replace(/[-:]/g, '').slice(0, 13);
-      const a = h('a', { href: URL.createObjectURL(blob), download: `pds-export-${stamp}.json` });
+      const a = h('a', { href: URL.createObjectURL(blob), download: `pds7-export-${stamp}.json` });
       document.body.append(a);
       a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-      setStatus(`내보냄: 계획 ${data.plans.length} · 할 일 ${data.todos.length} · 실행 ${data.executions.length} · 회고 ${data.reviews.length}`, 'ok');
+      setStatus(`내보냄: 계획 ${data.plans.length} · 할 일 ${data.todos.length} · 실행 ${data.executions.length} · 회고 ${data.reviews.length} · 관찰 기록 ${data.daily_logs.length}`, 'ok');
     } catch (e) {
-      setStatus(`내보내기 실패: ${e.message}`, 'error');
+      if (e.status !== 401) setStatus(`내보내기 실패: ${e.message}`, 'error');
+    }
+  }
+
+  // ───────── 5일 관찰 ─────────
+  const num = (v) => (v === null || v === undefined ? '-' : String(Number(v)));
+  function renderObservation() {
+    const s = state.snap;
+    const o = s.observation;
+    const logs = s.daily_logs;
+    const rc = s.rule_change;
+    const body = clear($('#obs-body'));
+    const todayLog = logs.find((l) => l.log_date === s.seoul_today);
+    const locked = todayLog && rc && [rc.day1_log_id, rc.day2_log_id].includes(todayLog.id);
+    const needRule = logs.length === 2 && !rc;
+    $('#obs-progress').textContent = o ? `${logs.length}/5일` : '시작 전';
+    // 접힌 띠에서도 오늘 할 일이 보이게 한다
+    const todayText = !o ? '질문·지표를 정하면 시작합니다'
+      : needRule ? '3일차 전에 규칙 변경 필요'
+      : todayLog ? `오늘 기록함 · ${num(todayLog.value)}`
+      : logs.length >= 5 ? '5일 기록 완료' : '오늘 기록 전';
+    const todayEl = $('#obs-today');
+    todayEl.textContent = todayText;
+    todayEl.className = `obs-today${o && !todayLog && logs.length < 5 ? ' pending' : ''}`;
+    const showSetup = !o || (state.obsEditing && !logs.length);
+    $('#obs-form').classList.toggle('hidden', !showSetup);
+    $('#rule-form').classList.toggle('hidden', !(o && needRule));
+    const canLog = o && !locked && (todayLog || (logs.length < 5 && !needRule));
+    $('#log-form').classList.toggle('hidden', !canLog || showSetup);
+    if (!o) {
+      body.append(h('p', { class: 'hint' }, '질문·지표·단위·계산 규칙·지금의 계획 규칙을 먼저 정하세요. 1일차 기록부터는 바꿀 수 없습니다.'));
+      return;
+    }
+    const nw = (t) => h('span', { class: 'nw' }, t);
+    const fact = (label, value) => h('div', { class: 'obs-fact' }, h('span', { class: 'fact-label' }, label), h('span', { class: 'fact-value' }, value));
+    body.append(
+      h('p', { class: 'obs-question', 'data-field': 'question' }, o.question),
+      h('div', { class: 'obs-facts' },
+        fact('지표', `${o.metric} · ${o.unit}`),
+        fact('계산 규칙', o.calc_rule),
+        fact('지금 계획 규칙', rc ? rc.new_rule : o.plan_rule),
+        fact('이상값 기준', `${num(o.outlier_min)} ~ ${num(o.outlier_max)} (밖이면 저장 안 함)`),
+        fact('평균 반올림', ['정수로', '소수 첫째 자리까지', '소수 둘째 자리까지'][o.rounding_digits]),
+        fact('주 시작 요일', o.week_start)),
+      h('details', { class: 'fold boxed' }, h('summary', {}, '빠진 날·같은 날 처리'),
+        h('p', { class: 'hint' }, '빠진 날은 합계·평균에서 빼고 기록한 날 수로 나눕니다. 같은 날 다시 저장하면 그날 값만 바뀝니다(하루 1건).')));
+    if (!logs.length && !state.obsEditing) {
+      body.append(h('div', { class: 'row' }, h('button', { type: 'button', id: 'obs-edit-btn', onclick: () => { state.obsEditing = true; fillObsForm(o); renderObservation(); } }, '설정 고치기')));
+    }
+
+    // 일차별 기록(규칙 변경은 2일차 뒤·3일차 앞에 표시)
+    const rows = [];
+    logs.forEach((l, i) => {
+      rows.push(h('tr', { 'data-log-id': l.id, class: l.log_date === s.seoul_today ? 'today' : '' },
+        h('td', {}, `${i + 1}일차`), h('td', {}, nw(l.log_date)), h('td', { class: 'numcell' }, num(l.value)),
+        h('td', {}, i < 2 ? '변경 전' : '변경 후'), h('td', { class: 'memo' }, l.note || '')));
+      if (i === 1 && rc) {
+        rows.push(h('tr', { class: 'rule-row' }, h('td', { colspan: '5' },
+          h('strong', {}, '계획 규칙 변경 '), nw(ts(rc.changed_at)), ' · ', `"${rc.old_rule}" → "${rc.new_rule}"`, h('br', {}), `이유: ${rc.reason}`)));
+      }
+    });
+    if (needRule) rows.push(h('tr', { class: 'rule-row pending' }, h('td', { colspan: '5' }, '3일차 기록 전에 아래에서 계획 규칙을 한 가지 바꾸세요.')));
+    if (rows.length) {
+      body.append(h('div', { class: 'table-scroll' }, h('table', { class: 'obs-table' },
+        h('thead', {}, h('tr', {}, h('th', {}, '일차'), h('th', {}, '날짜'), h('th', {}, `값(${o.unit})`), h('th', {}, '규칙'), h('th', {}, '메모'))),
+        h('tbody', {}, rows))));
+    }
+
+    // 같은 지표·단위·계산 규칙으로 변경 전/후 비교. 손으로 더해 볼 수 있게 값 목록을 같이 보여 준다.
+    const st = s.observation_stats;
+    if (st && logs.length) {
+      const byId = new Map(logs.map((l) => [l.id, l]));
+      const line = (key, label) => {
+        const p = st.phases[key];
+        const vals = p.log_ids.map((id) => num(byId.get(id).value));
+        return h('tr', { 'data-phase': key }, h('td', {}, label), h('td', { class: 'numcell' }, `${p.days}일`),
+          h('td', { class: 'numcell', 'data-field': 'sum' }, num(p.sum)), h('td', { class: 'numcell', 'data-field': 'avg' }, num(p.avg)),
+          h('td', { class: 'memo' }, vals.length ? `${vals.join(' + ')} = ${num(p.sum)}` : '-'));
+      };
+      body.append(h('div', { class: 'table-scroll' }, h('table', { class: 'obs-table obs-stats' },
+        h('thead', {}, h('tr', {}, h('th', {}, '구간'), h('th', {}, '기록한 날'), h('th', {}, '합계'), h('th', {}, '평균'), h('th', {}, '확인용 계산'))),
+        h('tbody', {}, line('before', '변경 전(1·2일차)'), line('after', '변경 후(3~5일차)'), line('all', '전체')))));
+    }
+    if (logs.length === 5 && !todayLog) body.append(h('p', { class: 'hint' }, '5일 기록을 모두 남겼습니다.'));
+    if (locked) body.append(h('p', { class: 'hint' }, '오늘 기록은 규칙 변경에 연결되어 고칠 수 없습니다.'));
+    $('#log-label').textContent = todayLog ? `오늘 값 고치기 (${o.unit})` : `${logs.length + 1}일차 오늘 값 (${o.unit})`;
+    if (todayLog && document.activeElement?.form !== $('#log-form')) {
+      $('#log-form').elements.value.value = num(todayLog.value);
+      $('#log-form').elements.note.value = todayLog.note || '';
+    }
+  }
+  function fillObsForm(o) {
+    const f = $('#obs-form');
+    for (const k of ['question', 'metric', 'unit', 'calc_rule', 'outlier_min', 'outlier_max', 'rounding_digits', 'week_start', 'plan_rule']) f.elements[k].value = o[k];
+  }
+  async function submitObs(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const v = (k) => f.elements[k].value;
+    try {
+      await mutate('관찰 설정', () => rpc('pds7_save_observation', {
+        p_question: v('question'), p_metric: v('metric'), p_unit: v('unit'), p_calc_rule: v('calc_rule'),
+        p_outlier_min: Number(v('outlier_min')), p_outlier_max: Number(v('outlier_max')),
+        p_rounding_digits: Number(v('rounding_digits')), p_week_start: v('week_start'), p_plan_rule: v('plan_rule'),
+      }));
+      state.obsEditing = false;
+      renderObservation();
+    } catch { /* 상태 표시줄 */ }
+  }
+  async function submitLog(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    try {
+      await mutate('오늘 기록', () => rpc('pds7_save_daily_log', { p_value: Number(f.elements.value.value), p_note: f.elements.note.value }));
+    } catch { /* 상태 표시줄 */ }
+  }
+  async function submitRule(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    try {
+      await mutate('규칙 변경', () => rpc('pds7_change_rule', { p_new_rule: f.elements.new_rule.value, p_reason: f.elements.reason.value }));
+      f.reset();
+    } catch { /* 상태 표시줄 */ }
+  }
+
+  // ───────── 로그인 화면·계정 ─────────
+  function setAuthMsg(text, kind = '') {
+    const el = $('#auth-msg');
+    el.textContent = text || '';
+    el.className = `status auth-msg ${kind}${text ? '' : ' hidden'}`;
+  }
+  function selectTab(which) {
+    const login = which === 'login';
+    $('#tab-login').setAttribute('aria-selected', String(login));
+    $('#tab-signup').setAttribute('aria-selected', String(!login));
+    $('#login-form').classList.toggle('hidden', !login);
+    $('#signup-form').classList.toggle('hidden', login);
+    (login ? $('#login-form') : $('#signup-form')).elements.email.focus();
+  }
+  function showAuth(msg, kind) {
+    $('#app-view').classList.add('hidden');
+    $('#auth-view').classList.remove('hidden');
+    document.title = '로그인 · Plan-Do-See 다이어리';
+    setAuthMsg(msg, kind);
+  }
+  function showApp() {
+    $('#auth-view').classList.add('hidden');
+    $('#app-view').classList.remove('hidden');
+    document.title = 'Plan-Do-See 다이어리';
+    setAuthMsg('');
+  }
+  // 화면·메모리에 남은 내 자료를 모두 지운다(로그아웃·세션 만료·계정 삭제)
+  function wipe() {
+    state.snap = null; state.planId = null; state.editingTodoId = null; state.todoEvidence = null; state.execEvidence = null;
+    state.completeKeys.clear(); state.obsEditing = false; state.fitted = false; state.me = null;
+    for (const sel of ['#plan-select', '#plan-detail', '#revision-list', '#todo-open-list', '#todo-done-list', '#exec-list', '#exec-summary',
+      '#stats', '#stats-caption', '#review-list', '#obs-body', '#sort-note', '#todo-evidence', '#exec-evidence']) clear($(sel));
+    for (const sel of ['#todo-open-count', '#todo-done-count', '#todo-total', '#obs-progress', '#account-email']) $(sel).textContent = '';
+    for (const f of document.querySelectorAll('#app-view form')) f.reset();
+    $('#account-menu').open = false;
+    try { sessionStorage.removeItem('pds-todo-show-all'); } catch { /* 무시 */ }
+    if (location.hash) history.replaceState(null, '', location.pathname);
+  }
+  function signedOut(msg, kind = 'error', callSignOut = true) {
+    if ($('#app-view').classList.contains('hidden') && !state.snap) { showAuth(msg, kind); return; }
+    session = null;
+    wipe();
+    showAuth(msg, kind);
+    if (callSignOut) sb.auth.signOut({ scope: 'local' }).catch(() => null); // 이 브라우저에 남은 토큰 제거
+  }
+  async function enterApp() {
+    const { data } = await sb.auth.getSession();
+    session = data.session;
+    if (!session) { showAuth(''); return; }
+    showApp();
+    setStatus('서버에서 불러오는 중…');
+    state.me = await rpc('pds7_me');
+    $('#account-email').textContent = state.me.email;
+    await load();
+  }
+  async function submitLogin(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    setAuthMsg('로그인 중…');
+    const { error } = await sb.auth.signInWithPassword({ email: f.elements.email.value.trim(), password: f.elements.password.value });
+    f.elements.password.value = '';
+    if (error) { setAuthMsg(authErrorText(error, 'login'), 'error'); return; }
+    f.reset();
+    await enterApp().catch(() => null);
+  }
+  async function submitSignup(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const email = f.elements.email.value.trim();
+    if (f.elements.password.value !== f.elements.password2.value) { setAuthMsg('비밀번호 확인이 다릅니다.', 'error'); return; }
+    setAuthMsg('가입 요청 중…');
+    const { data, error } = await sb.auth.signUp({ email, password: f.elements.password.value, options: { emailRedirectTo: `${location.origin}${location.pathname}` } });
+    f.elements.password.value = ''; f.elements.password2.value = '';
+    if (error) { setAuthMsg(authErrorText(error, 'signup'), 'error'); return; }
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) { setAuthMsg('이미 가입된 이메일입니다. 로그인하세요.', 'error'); return; }
+    if (data.session) { await enterApp().catch(() => null); return; }
+    f.reset();
+    selectTab('login');
+    $('#login-form').elements.email.value = email;
+    setAuthMsg('확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 로그인하세요.', 'ok');
+  }
+  async function logout() {
+    setStatus('로그아웃 중…');
+    const { error } = await sb.auth.signOut({ scope: 'local' }); // 서버에서 이 세션을 지운다
+    signedOut(error ? '이 브라우저에서 로그아웃했습니다. 서버 응답을 확인하지 못했으니 다른 기기 로그인은 비밀번호 변경으로 끝내세요.' : '로그아웃했습니다.', error ? 'error' : 'ok', false);
+  }
+  async function submitPassword(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    if (f.elements.password.value !== f.elements.password2.value) { setStatus('새 비밀번호 확인이 다릅니다.', 'error'); return; }
+    setStatus('비밀번호 변경 중…');
+    const { error } = await sb.auth.updateUser({ password: f.elements.password.value });
+    f.reset();
+    if (error) {
+      setStatus(error.code === 'reauthentication_needed' ? '보안을 위해 다시 로그인한 직후에 바꾸세요.' : authErrorText(error, 'password'), 'error');
+      return;
+    }
+    // 서버는 비밀번호가 바뀐 시각 이전의 세션을 모두 거절한다. 여기서도 모든 세션을 끝낸다.
+    await sb.auth.signOut({ scope: 'global' }).catch(() => null);
+    signedOut('비밀번호를 바꿨습니다. 새 비밀번호로 다시 로그인하세요.', 'ok', false);
+  }
+  async function submitDelete(ev) {
+    ev.preventDefault();
+    const f = ev.target;
+    const confirmText = f.elements.confirm.value.trim();
+    if (confirmText !== '계정 삭제') { setStatus('확인 문구로 "계정 삭제"를 정확히 입력하세요.', 'error'); return; }
+    const email = state.me?.email;
+    setStatus('비밀번호 확인 중…');
+    const { error } = await sb.auth.signInWithPassword({ email, password: f.elements.password.value }); // 최근 로그인 세션 만들기
+    f.elements.password.value = '';
+    if (error) { setStatus(error.status === 429 ? '요청이 많습니다. 잠시 후 다시 시도하세요.' : '현재 비밀번호가 맞지 않습니다.', 'error'); return; }
+    try {
+      const r = await rpc('pds7_delete_account', { p_confirm: confirmText });
+      const n = r.deleted_counts;
+      await sb.auth.signOut({ scope: 'local' }).catch(() => null);
+      signedOut(`계정과 내 기록을 삭제했습니다(계획 ${n.plans} · 할 일 ${n.todos} · 실행 ${n.executions} · 회고 ${n.reviews} · 관찰 기록 ${n.daily_logs}).`, 'ok', false);
+    } catch (e) {
+      if (e.status !== 401) setStatus(`계정 삭제 실패: ${e.message}`, 'error');
     }
   }
 
   // ───────── 이벤트 연결 ─────────
+  $('#tab-login').addEventListener('click', () => selectTab('login'));
+  $('#tab-signup').addEventListener('click', () => selectTab('signup'));
+  $('#login-form').addEventListener('submit', submitLogin);
+  $('#signup-form').addEventListener('submit', submitSignup);
+  $('#logout-btn').addEventListener('click', logout);
+  $('#password-form').addEventListener('submit', submitPassword);
+  $('#delete-form').addEventListener('submit', submitDelete);
+  $('#obs-form').addEventListener('submit', submitObs);
+  $('#log-form').addEventListener('submit', submitLog);
+  $('#rule-form').addEventListener('submit', submitRule);
   $('#plan-select').addEventListener('change', (e) => selectPlan(e.target.value));
   $('#new-plan-btn').addEventListener('click', () => openPlanForm('create'));
   $('#plan-form').addEventListener('submit', submitPlan);
@@ -653,5 +935,28 @@
   $('#export-btn').addEventListener('click', exportAll);
   $('#reload-btn').addEventListener('click', () => load().catch(() => null));
 
-  load().catch(() => null);
+  // 다른 탭에서 로그아웃했거나 토큰 갱신이 실패하면 이 탭의 자료도 지운다
+  sb.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT' && !$('#app-view').classList.contains('hidden')) signedOut('로그인이 끝났습니다. 다시 로그인하세요.', 'error', false);
+  });
+  // 뒤로 가기로 예전 화면이 캐시에서 되살아나면 새로 불러와 서버 기준으로 다시 그린다
+  window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+
+  async function boot() {
+    // 확인 메일 링크로 돌아온 경우: 주소의 1회용 코드·오류를 바로 지우고(기록·공유·Referer 로 남지 않게) 비밀번호 로그인을 받는다
+    const u = new URL(location.href);
+    const hp = new URLSearchParams(location.hash.slice(1));
+    let msg = '', kind = '';
+    const authParams = ['code', 'error', 'error_code', 'error_description', 'token_hash', 'type'];
+    if (authParams.some((k) => u.searchParams.has(k)) || hp.has('access_token') || hp.has('error')) {
+      const failed = u.searchParams.has('error') || hp.has('error');
+      msg = failed ? '확인 링크가 만료되었거나 이미 사용되었습니다. 로그인해 보거나 다시 가입하세요.' : '이메일 확인이 끝났습니다. 로그인하세요.';
+      kind = failed ? 'error' : 'ok';
+      history.replaceState(null, '', u.pathname);
+    }
+    const { data } = await sb.auth.getSession();
+    if (data.session) await enterApp().catch(() => null);
+    else showAuth(msg, kind);
+  }
+  boot();
 })();
