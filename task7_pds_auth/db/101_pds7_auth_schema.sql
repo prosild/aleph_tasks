@@ -29,9 +29,17 @@ create table pds7_private.password_changes (
   changed_at timestamptz not null
 );
 
+-- 이 스키마를 적용한 시각. 그보다 먼저 만든 계정(공유 프로젝트의 다른 서비스 계정)은 이 앱에서 삭제하지 못하게 한다.
+create table pds7_private.settings (
+  key   text primary key,
+  value timestamptz not null
+);
+insert into pds7_private.settings (key, value) values ('schema_applied_at', now());
+
 alter table pds7_private.members enable row level security;
 alter table pds7_private.password_changes enable row level security;
-revoke all on pds7_private.members, pds7_private.password_changes from public, anon, authenticated;
+alter table pds7_private.settings enable row level security;
+revoke all on pds7_private.members, pds7_private.password_changes, pds7_private.settings from public, anon, authenticated;
 
 -- 현재 요청의 사용자 ID. 세션이 살아 있고(로그아웃·삭제 안 됨, not_after 이전) 마지막 비밀번호 변경 이후 세션일 때만 반환.
 -- SECURITY DEFINER 인 이유: authenticated 역할은 auth.sessions 를 읽을 권한이 없다(읽기 권한을 주지 않기 위해 이 함수로 한정).
@@ -207,14 +215,15 @@ create table public.pds7_reviews (
   seoul_date    date not null,
   t06_source_id uuid null,
   created_at    timestamptz not null default now(),
-  constraint pds7_reviews_plan_fk foreign key (plan_id, user_id) references public.pds7_plans(id, user_id) on delete cascade
+  constraint pds7_reviews_plan_fk foreign key (plan_id, user_id) references public.pds7_plans(id, user_id) on delete cascade,
+  constraint pds7_reviews_id_user_uq unique (id, user_id)
 );
 create index pds7_reviews_plan_idx on public.pds7_reviews (plan_id);
 create index pds7_reviews_user_idx on public.pds7_reviews (user_id);
 
 alter table public.pds7_plans
   add constraint pds7_plans_source_review_fk
-  foreign key (source_review_id) references public.pds7_reviews(id) on delete set null;
+  foreign key (source_review_id, user_id) references public.pds7_reviews(id, user_id) on delete set null (source_review_id);
 
 -- ───────────────────────── 5일 관찰 테이블 (T07 카드 5) ─────────────────────────
 -- 관찰 설정: 계정당 1개. 첫 일별 기록을 남긴 뒤에는 바꿀 수 없다(1일차 고정).
@@ -301,6 +310,10 @@ create trigger pds7_executions_owner_fixed before update of user_id on public.pd
 create trigger pds7_reviews_owner_fixed before update of user_id on public.pds7_reviews
   for each row execute function pds7_private.forbid_owner_change();
 create trigger pds7_daily_logs_owner_fixed before update of user_id on public.pds7_daily_logs
+  for each row execute function pds7_private.forbid_owner_change();
+create trigger pds7_observations_owner_fixed before update of user_id on public.pds7_observations
+  for each row execute function pds7_private.forbid_owner_change();
+create trigger pds7_rule_changes_owner_fixed before update of user_id on public.pds7_rule_changes
   for each row execute function pds7_private.forbid_owner_change();
 
 -- ───────────────────────── 내부 검증 도우미 ─────────────────────────
@@ -395,8 +408,9 @@ begin
   if coalesce(p_confirm, '') <> '계정 삭제' then
     raise exception '확인 문구로 "계정 삭제"를 정확히 입력하세요' using errcode = '22023';
   end if;
-  if not exists (select 1 from pds7_private.members where user_id = v_uid) then
-    raise sqlstate 'PT403' using message = '이 앱에서 만든 계정만 여기서 삭제할 수 있습니다';
+  if not exists (select 1 from pds7_private.members where user_id = v_uid)
+     or (select created_at from auth.users where id = v_uid) < (select value from pds7_private.settings where key = 'schema_applied_at') then
+    raise sqlstate 'PT403' using message = '이 앱에서 가입한 계정만 여기서 삭제할 수 있습니다';
   end if;
   select created_at into v_session_created from auth.sessions where id = v_sid;
   if v_session_created is null or v_session_created < now() - interval '5 minutes' then

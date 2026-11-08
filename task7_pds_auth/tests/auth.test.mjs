@@ -317,3 +317,25 @@ test('C134: 계정 삭제 — 확인 문구·최근 재로그인 필요, 삭제 
     evidence.push({ id: 'C134-db', title: '삭제 후 B 의 auth.users·sessions·pds7 자료·회원 행 수', result: 0 });
   }
 });
+
+test('피드백 반영(로컬 SQL): 스키마보다 먼저 만든 계정은 앱에서 삭제 불가, 관찰·규칙 소유자 변경 불가, 남의 회고 연결은 외래키가 거절', { skip: !local }, async () => {
+  // 공유 프로젝트의 기존 계정 흉내: 가입 시각을 스키마 적용 시각보다 앞으로 옮긴다(로컬 전용)
+  const email = `t07-local-legacy-${randomUUID().slice(0, 6)}@example.com`;
+  const hash = sql(`select extensions.crypt(:'pw', extensions.gen_salt('bf', 10));`, { pw: PW });
+  const tmpl = readFileSync(path.join(APP_ROOT, 'db', '104_create_test_user.sql.tmpl'), 'utf8');
+  const id = sql(tmpl, { email, hash }).split('\n')[0];
+  sql(`update auth.users set created_at = (select value from pds7_private.settings where key = 'schema_applied_at') - interval '1 day' where id = :'id';`, { id });
+  const s = await c.signIn(email, PW);
+  ok(s);
+  ok(await c.rpc(s.body.access_token, 'pds7_me'));
+  const r = rec('C134-legacy-account', '스키마 적용 전부터 있던 계정의 삭제 요청', await c.rpc(s.body.access_token, 'pds7_delete_account', { p_confirm: '계정 삭제' }));
+  assert.equal(r.status, 403);
+  assert.equal(sql(`select count(*) from auth.users where id = :'id';`, { id }), '1');
+  // 관찰·규칙 소유자 변경 차단
+  ok(await c.rpc(s.body.access_token, 'pds7_save_observation', { p_question: 'q', p_metric: 'm', p_unit: '시간(분)', p_calc_rule: 'c', p_outlier_min: 0, p_outlier_max: 10, p_rounding_digits: 1, p_week_start: '월요일', p_plan_rule: 'r' }));
+  assert.throws(() => sql(`update public.pds7_observations set user_id = :'other' where user_id = :'id';`, { id, other: S.a.user.id }), /소유자는 변경할 수 없습니다/);
+  // 다른 계정의 회고를 내 계획에 연결 → 복합 외래키 위반
+  const myPlan = (await c.rpc(s.body.access_token, 'pds7_create_plan', planBody('[시험] 레거시 계획'))).body;
+  assert.throws(() => sql(`update public.pds7_plans set source_review_id = :'rv' where id = :'p';`, { rv: S.a.review, p: myPlan }), /pds7_plans_source_review_fk/);
+  sql(`delete from auth.users where id = :'id';`, { id });
+});

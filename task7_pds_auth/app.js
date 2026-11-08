@@ -684,7 +684,7 @@
       : logs.length >= 5 ? '5일 기록 완료' : '오늘 기록 전';
     const todayEl = $('#obs-today');
     todayEl.textContent = todayText;
-    todayEl.className = `obs-today${o && !todayLog && logs.length < 5 ? ' pending' : ''}`;
+    todayEl.className = `obs-today${!o || (!todayLog && logs.length < 5) ? ' pending' : ''}`;
     const showSetup = !o || (state.obsEditing && !logs.length);
     $('#obs-form').classList.toggle('hidden', !showSetup);
     $('#rule-form').classList.toggle('hidden', !(o && needRule));
