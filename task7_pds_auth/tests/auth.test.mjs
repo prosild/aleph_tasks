@@ -283,24 +283,31 @@ function localUser(label, { legacy = false } = {}) {
   return { email, id };
 }
 
-test('R-A(로컬 SQL): 회원 등록 전 세션은 자료 RPC 불가, 등록 전 비밀번호 변경도 기록되어 옛 세션으로 등록·접근이 되살아나지 않음', { skip: !local }, async () => {
-  const u = localUser('ra');
-  const s1 = (await c.signIn(u.email, PW)).body.access_token;
-  const pre = rec('R-A-no-enroll', '회원 등록(pds7_me) 없이 자료 RPC 호출', await c.rpc(s1, 'pds7_create_plan', planBody('[시험] 등록 전 계획')));
+// R-A: 시험 계정 C(회원 등록 전 상태). 로컬·원격 같은 코드. 원격은 1회용(등록 뒤에는 다시 돌릴 수 없음).
+test('R-A: 회원 등록 전 세션은 자료 RPC 403, 등록 전 직접 비밀번호 변경 뒤 옛 세션·변경 세션은 등록·접근 불가, 새 로그인만 등록', { skip: !acc.c || Boolean(t.remote && process.env.T07_RUN_DELETE) }, async () => {
+  const cu = acc.c;
+  const cNew = `${cu.password}-changed`;
+  secrets.push(cu.password, cNew);
+  const s1r = await c.signIn(cu.email, cu.password);
+  assert.equal(s1r.status, 200, 'C 로그인(등록 전 상태여야 함)');
+  const s1 = s1r.body.access_token;
+  const pre = rec('R-A-no-enroll', '회원 등록(pds7_me) 없이 자료 쓰기', await c.rpc(s1, 'pds7_create_plan', planBody('[시험] 등록 전 계획')));
   assert.equal(pre.status, 403, `등록 전 자료 쓰기는 거절: ${JSON.stringify(pre.body)}`);
-  assert.equal(sql(`select count(*) from public.pds7_plans where user_id = :'id';`, { id: u.id }), '0');
-  const s2 = (await c.signIn(u.email, PW)).body.access_token;
-  ok(await c.updatePassword(s2, NEW_PW)); // 직접 Auth API, signOut 미호출, 아직 회원 아님
-  assert.equal(sql(`select count(*) from pds7_private.password_changes where user_id = :'id';`, { id: u.id }), '1', '등록 전 비밀번호 변경도 기록');
-  const en = rec('R-A-old-enroll', '비밀번호 변경 전 세션으로 회원 등록 시도', await c.rpc(s1, 'pds7_me'));
-  assert.equal(en.status, 401);
+  assert.equal(rec('R-A-no-enroll-read', '회원 등록 없이 목록 조회', await c.rpc(s1, 'pds7_snapshot')).status, 403);
+  const s2 = (await c.signIn(cu.email, cu.password)).body.access_token;
+  ok(rec('R-A-pw-change', '등록 전 직접 Auth API 비밀번호 변경(PUT /auth/v1/user, signOut 미호출)', await c.updatePassword(s2, cNew)));
+  const saved = loadAccounts();
+  saved[t.remote ? 'remote' : 'local'].c.password = cNew; // 저장소 밖 파일만
+  writeFileSync(ACCOUNTS_FILE, JSON.stringify(saved, null, 2));
+  if (local) assert.equal(sql(`select count(*) from pds7_private.password_changes where user_id = :'id';`, { id: s1r.body.user.id }), '1', '등록 전 비밀번호 변경도 기록');
+  assert.equal(rec('R-A-old-enroll', '변경 전 세션(s1)으로 회원 등록', await c.rpc(s1, 'pds7_me')).status, 401);
+  assert.equal(rec('R-A-changer-enroll', '비밀번호를 바꾼 세션(s2)으로 회원 등록', await c.rpc(s2, 'pds7_me')).status, 401);
   for (const tok of [s1, s2]) assert.equal((await c.rpc(tok, 'pds7_snapshot')).status, 401);
-  assert.equal(sql(`select count(*) from pds7_private.members where user_id = :'id';`, { id: u.id }), '0', '옛 세션으로 등록되지 않음');
-  const s3 = (await c.signIn(u.email, NEW_PW)).body.access_token;
+  if (local) assert.equal(sql(`select count(*) from pds7_private.members where user_id = :'id';`, { id: s1r.body.user.id }), '0', '옛 세션으로 등록되지 않음');
+  const s3 = (await c.signIn(cu.email, cNew)).body.access_token;
   ok(rec('R-A-new-enroll', '새 비밀번호로 로그인한 세션으로 회원 등록', await c.rpc(s3, 'pds7_me')));
-  ok(await c.rpc(s3, 'pds7_create_plan', planBody('[시험] 등록 후 계획')));
-  assert.equal((await c.rpc(s1, 'pds7_snapshot')).status, 401, '등록 뒤에도 옛 세션은 계속 거절');
-  sql(`delete from auth.users where id = :'id';`, { id: u.id });
+  ok(rec('R-A-new-data', '등록 뒤 자료 쓰기', await c.rpc(s3, 'pds7_create_plan', planBody('[시험] C 등록 후 계획'))));
+  assert.equal(rec('R-A-old-after', '등록 뒤 옛 세션(s1)으로 조회', await c.rpc(s1, 'pds7_snapshot')).status, 401);
 });
 
 test('R-A·R-C(로컬 SQL): 스키마 적용 전 계정은 회원 등록 자체가 거절(403, 조용한 예외 없음), 비밀번호 변경 기록·회원 행도 남기지 않음', { skip: !local }, async () => {
