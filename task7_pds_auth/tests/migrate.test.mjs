@@ -58,6 +58,8 @@ test('C100: 본인 계정으로 복사, 원본 지문 불변, 본인 화면 자�
   // 다른 계정은 이관분을 보지 못한다
   const other = newLocalUser('other');
   const o = await c.signIn(other.email, other.password);
+  assert.equal((await c.rpc(o.body.access_token, 'pds7_snapshot')).status, 403, '회원 등록 전에는 자료 RPC 거절');
+  assert.equal((await c.rpc(o.body.access_token, 'pds7_me')).status, 200);
   const os = (await c.rpc(o.body.access_token, 'pds7_snapshot')).body;
   assert.equal(os.plans.length, 0);
   // 두 번째 실행(같은·다른 계정 모두) 거절

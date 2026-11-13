@@ -231,6 +231,59 @@ test('C96·C109: 로그아웃 → 로그인 화면, 화면·저장소에 자료�
   await ctx.close();
 });
 
+test('R-A·R-C: 이 앱을 열기 전부터 있던 공유 계정으로 로그인 → 회원 등록 거절 이유 표시, 로그인 정보 남지 않음', async () => {
+  const u = newLocalUser('legacyui');
+  sql(`update auth.users set created_at = (select value from pds7_private.settings where key = 'schema_applied_at') - interval '1 day' where id = :'id';`, { id: u.id });
+  const { ctx, page } = await newPage();
+  await page.goto(`${srv.url}`);
+  await page.waitForSelector('#login-form:not(.hidden)');
+  await page.fill('#login-form [name=email]', u.email);
+  await page.fill('#login-form [name=password]', u.password);
+  await page.click('#login-form button[type=submit]');
+  await page.waitForFunction(() => /공유 계정은 쓸 수 없습니다/.test(document.querySelector('#auth-msg').textContent));
+  assert.ok(await page.isHidden('#app-view'));
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((k) => /-auth-token/.test(k))), []);
+  assert.equal(sql(`select count(*) from pds7_private.members where user_id = :'id';`, { id: u.id }), '0');
+  await ctx.close();
+});
+
+for (const failure of ['500', 'network']) {
+  test(`R-B: 서버 로그아웃 실패(${failure}) → 이 브라우저 토큰은 지우고, 서버 폐기 실패를 그대로 안내, 새로고침·새 탭에도 로그인 안 됨`, async () => {
+    const u = newLocalUser(`lo${failure}`);
+    const n0 = consoleErrors.length;
+    const { ctx, page } = await newPage();
+    await page.goto(`${srv.url}`);
+    await uiLogin(page, u);
+    await loaded(page);
+    const token = await tokenOf(page);
+    await page.route('**/auth/v1/logout**', (r) => (failure === '500'
+      ? r.fulfill({ status: 500, contentType: 'application/json', body: '{"code":500,"msg":"시험용 서버 오류"}' })
+      : r.abort('failed')));
+    await page.click('#logout-btn');
+    await page.waitForSelector('#auth-view:not(.hidden)');
+    const storage = await page.evaluate(() => Object.keys(localStorage).filter((k) => /-auth-token/.test(k)));
+    assert.deepEqual(storage, [], '토큰 저장소 비어 있음');
+    const msg = await authMsg(page);
+    assert.match(msg, /이 브라우저의 로그인 정보는 지웠습니다/);
+    assert.match(msg, /서버에서 세션을 끝냈는지 확인하지 못했습니다/);
+    assert.doesNotMatch(msg, /^로그아웃했습니다/);
+    await page.unroute('**/auth/v1/logout**');
+    await page.reload();
+    await page.waitForSelector('#auth-view:not(.hidden)');
+    assert.ok(await page.isHidden('#app-view'), '새로고침 뒤 로그인 화면');
+    const tab2 = await ctx.newPage();
+    await tab2.goto(`${srv.url}`);
+    await tab2.waitForSelector('#auth-view:not(.hidden)');
+    assert.ok(await tab2.isHidden('#app-view'), '새 탭도 로그인 화면');
+    // 서버 요청이 실패했으므로 서버 세션은 남아 있다(안내 문구가 말하는 한계). 이 사실을 숨기지 않는다.
+    assert.equal(await apiSnapshot(page, token), 200, '서버 폐기 실패 시 기존 토큰은 서버에서 아직 유효(한계)');
+    await ctx.close();
+    // 이 시험이 일부러 만든 로그아웃 실패(500·네트워크 끊김)만 콘솔 오류 목록에서 뺀다
+    const mine = consoleErrors.splice(n0);
+    consoleErrors.push(...mine.filter((e) => !(failure === '500' ? /status of 500/ : /net::ERR_FAILED/).test(e)));
+  });
+}
+
 test('C114: 화면에서 비밀번호 변경 → 로그인 화면, 이전 토큰 401, 새 비밀번호로 로그인', async () => {
   const u = newLocalUser('pw');
   const { ctx, page } = await newPage();

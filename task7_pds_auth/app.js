@@ -837,7 +837,17 @@
     if (!session) { showAuth(''); return; }
     showApp();
     setStatus('서버에서 불러오는 중…');
-    state.me = await rpc('pds7_me');
+    try {
+      state.me = await rpc('pds7_me');
+    } catch (e) {
+      // 회원 등록 거절(예: 이 앱을 열기 전부터 있던 공유 계정) → 로그인 정보를 지우고 이유를 그대로 보여 준다
+      if (e instanceof ApiError && e.status === 403) {
+        await sb.auth.signOut({ scope: 'local' }).catch(() => null);
+        clearLocalAuth();
+        signedOut(e.message, 'error', false);
+      }
+      throw e;
+    }
     $('#account-email').textContent = state.me.email;
     await load();
   }
@@ -867,10 +877,28 @@
     $('#login-form').elements.email.value = email;
     setAuthMsg('확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 로그인하세요.', 'ok');
   }
+  // 이 브라우저에 저장된 로그인 정보(토큰·PKCE 값)를 직접 지우고, 남았는지 확인한다.
+  // SDK는 서버 로그아웃이 실패해도 대개 지우지만, 예외로 끝나는 경우까지 여기서 보장한다.
+  function clearLocalAuth() {
+    const prefix = sb.auth.storageKey;
+    try {
+      for (const k of Object.keys(localStorage)) if (k.startsWith(prefix)) localStorage.removeItem(k);
+      return !Object.keys(localStorage).some((k) => k.startsWith(prefix));
+    } catch { return false; }
+  }
   async function logout() {
     setStatus('로그아웃 중…');
-    const { error } = await sb.auth.signOut({ scope: 'local' }); // 서버에서 이 세션을 지운다
-    signedOut(error ? '이 브라우저에서 로그아웃했습니다. 서버 응답을 확인하지 못했으니 다른 기기 로그인은 비밀번호 변경으로 끝내세요.' : '로그아웃했습니다.', error ? 'error' : 'ok', false);
+    let serverOk = false;
+    try {
+      const { error } = await sb.auth.signOut({ scope: 'local' }); // 서버에서 이 세션을 지운다
+      serverOk = !error;
+    } catch { serverOk = false; }
+    const localOk = clearLocalAuth();
+    let msg;
+    if (!localOk) msg = '이 브라우저의 로그인 정보를 지우지 못했습니다. 브라우저의 이 사이트 데이터를 직접 지우세요.';
+    else if (!serverOk) msg = '이 브라우저의 로그인 정보는 지웠습니다. 다만 서버에서 세션을 끝냈는지 확인하지 못했습니다(네트워크·서버 오류). 이 세션이 다른 곳에 남았을 수 있다면 다시 로그인해 비밀번호를 바꾸세요. 비밀번호를 바꾸면 이전 세션은 모두 거절됩니다.';
+    else msg = '로그아웃했습니다.';
+    signedOut(msg, localOk && serverOk ? 'ok' : 'error', false);
   }
   async function submitPassword(ev) {
     ev.preventDefault();

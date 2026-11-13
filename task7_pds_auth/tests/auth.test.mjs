@@ -273,17 +273,47 @@ test('세션 검증 함수(로컬 SQL): 잘못된 session_id·없는 세션·만
   evidence.push({ id: 'session-fn', title: 'current_user_id: 정상/잘못된 session_id/없는 세션/다른 sub/익명/anon/만료 세션', result: '정상만 사용자 ID, 나머지 NULL → 401 "로그인이 필요합니다"' });
 });
 
-test('트리거 범위(로컬 SQL): T07 회원이 아닌 계정의 비밀번호 변경은 기록하지 않는다', { skip: !local }, async () => {
-  const email = `t07-local-nonmember-${randomUUID().slice(0, 6)}@example.com`;
+function localUser(label, { legacy = false } = {}) {
+  const email = `t07-local-${label}-${randomUUID().slice(0, 6)}@example.com`;
   const hash = sql(`select extensions.crypt(:'pw', extensions.gen_salt('bf', 10));`, { pw: PW });
   const tmpl = readFileSync(path.join(APP_ROOT, 'db', '104_create_test_user.sql.tmpl'), 'utf8');
   const id = sql(tmpl, { email, hash }).split('\n')[0];
-  const s = await c.signIn(email, PW);
-  ok(s);
-  ok(await c.updatePassword(s.body.access_token, NEW_PW));
-  assert.equal(sql(`select count(*) from pds7_private.password_changes where user_id = :'id';`, { id }), '0');
-  assert.equal(sql(`select count(*) from pds7_private.members where user_id = :'id';`, { id }), '0');
-  sql(`delete from auth.users where id = :'id';`, { id });
+  // 공유 프로젝트의 기존 계정 흉내: 가입 시각을 스키마 적용 시각보다 앞으로 옮긴다(로컬 전용)
+  if (legacy) sql(`update auth.users set created_at = (select value from pds7_private.settings where key = 'schema_applied_at') - interval '1 day' where id = :'id';`, { id });
+  return { email, id };
+}
+
+test('R-A(로컬 SQL): 회원 등록 전 세션은 자료 RPC 불가, 등록 전 비밀번호 변경도 기록되어 옛 세션으로 등록·접근이 되살아나지 않음', { skip: !local }, async () => {
+  const u = localUser('ra');
+  const s1 = (await c.signIn(u.email, PW)).body.access_token;
+  const pre = rec('R-A-no-enroll', '회원 등록(pds7_me) 없이 자료 RPC 호출', await c.rpc(s1, 'pds7_create_plan', planBody('[시험] 등록 전 계획')));
+  assert.equal(pre.status, 403, `등록 전 자료 쓰기는 거절: ${JSON.stringify(pre.body)}`);
+  assert.equal(sql(`select count(*) from public.pds7_plans where user_id = :'id';`, { id: u.id }), '0');
+  const s2 = (await c.signIn(u.email, PW)).body.access_token;
+  ok(await c.updatePassword(s2, NEW_PW)); // 직접 Auth API, signOut 미호출, 아직 회원 아님
+  assert.equal(sql(`select count(*) from pds7_private.password_changes where user_id = :'id';`, { id: u.id }), '1', '등록 전 비밀번호 변경도 기록');
+  const en = rec('R-A-old-enroll', '비밀번호 변경 전 세션으로 회원 등록 시도', await c.rpc(s1, 'pds7_me'));
+  assert.equal(en.status, 401);
+  for (const tok of [s1, s2]) assert.equal((await c.rpc(tok, 'pds7_snapshot')).status, 401);
+  assert.equal(sql(`select count(*) from pds7_private.members where user_id = :'id';`, { id: u.id }), '0', '옛 세션으로 등록되지 않음');
+  const s3 = (await c.signIn(u.email, NEW_PW)).body.access_token;
+  ok(rec('R-A-new-enroll', '새 비밀번호로 로그인한 세션으로 회원 등록', await c.rpc(s3, 'pds7_me')));
+  ok(await c.rpc(s3, 'pds7_create_plan', planBody('[시험] 등록 후 계획')));
+  assert.equal((await c.rpc(s1, 'pds7_snapshot')).status, 401, '등록 뒤에도 옛 세션은 계속 거절');
+  sql(`delete from auth.users where id = :'id';`, { id: u.id });
+});
+
+test('R-A·R-C(로컬 SQL): 스키마 적용 전 계정은 회원 등록 자체가 거절(403, 조용한 예외 없음), 비밀번호 변경 기록·회원 행도 남기지 않음', { skip: !local }, async () => {
+  const u = localUser('legacy', { legacy: true });
+  const s = (await c.signIn(u.email, PW)).body.access_token;
+  const en = rec('R-A-legacy-enroll', '스키마 적용 전 계정의 회원 등록', await c.rpc(s, 'pds7_me'));
+  assert.equal(en.status, 403);
+  assert.equal((await c.rpc(s, 'pds7_snapshot')).status, 403);
+  assert.equal((await c.rpc(s, 'pds7_delete_account', { p_confirm: '계정 삭제' })).status, 403);
+  ok(await c.updatePassword(s, NEW_PW));
+  assert.equal(sql(`select (select count(*) from pds7_private.password_changes where user_id = :'id') + (select count(*) from pds7_private.members where user_id = :'id');`, { id: u.id }), '0');
+  assert.equal(sql(`select count(*) from auth.users where id = :'id';`, { id: u.id }), '1');
+  sql(`delete from auth.users where id = :'id';`, { id: u.id });
 });
 
 // 원격에서는 해시 증거(C103·C104)를 관리자 SQL 로 먼저 받은 뒤 T07_RUN_DELETE=1 로 따로 실행한다
@@ -318,24 +348,13 @@ test('C134: 계정 삭제 — 확인 문구·최근 재로그인 필요, 삭제 
   }
 });
 
-test('피드백 반영(로컬 SQL): 스키마보다 먼저 만든 계정은 앱에서 삭제 불가, 관찰·규칙 소유자 변경 불가, 남의 회고 연결은 외래키가 거절', { skip: !local }, async () => {
-  // 공유 프로젝트의 기존 계정 흉내: 가입 시각을 스키마 적용 시각보다 앞으로 옮긴다(로컬 전용)
-  const email = `t07-local-legacy-${randomUUID().slice(0, 6)}@example.com`;
-  const hash = sql(`select extensions.crypt(:'pw', extensions.gen_salt('bf', 10));`, { pw: PW });
-  const tmpl = readFileSync(path.join(APP_ROOT, 'db', '104_create_test_user.sql.tmpl'), 'utf8');
-  const id = sql(tmpl, { email, hash }).split('\n')[0];
-  sql(`update auth.users set created_at = (select value from pds7_private.settings where key = 'schema_applied_at') - interval '1 day' where id = :'id';`, { id });
-  const s = await c.signIn(email, PW);
-  ok(s);
-  ok(await c.rpc(s.body.access_token, 'pds7_me'));
-  const r = rec('C134-legacy-account', '스키마 적용 전부터 있던 계정의 삭제 요청', await c.rpc(s.body.access_token, 'pds7_delete_account', { p_confirm: '계정 삭제' }));
-  assert.equal(r.status, 403);
-  assert.equal(sql(`select count(*) from auth.users where id = :'id';`, { id }), '1');
-  // 관찰·규칙 소유자 변경 차단
-  ok(await c.rpc(s.body.access_token, 'pds7_save_observation', { p_question: 'q', p_metric: 'm', p_unit: '시간(분)', p_calc_rule: 'c', p_outlier_min: 0, p_outlier_max: 10, p_rounding_digits: 1, p_week_start: '월요일', p_plan_rule: 'r' }));
-  assert.throws(() => sql(`update public.pds7_observations set user_id = :'other' where user_id = :'id';`, { id, other: S.a.user.id }), /소유자는 변경할 수 없습니다/);
-  // 다른 계정의 회고를 내 계획에 연결 → 복합 외래키 위반
-  const myPlan = (await c.rpc(s.body.access_token, 'pds7_create_plan', planBody('[시험] 레거시 계획'))).body;
+test('피드백 반영(로컬 SQL): 관찰·규칙 소유자 변경 불가, 남의 회고 연결은 외래키가 거절 (스키마 이전 계정 삭제 거절은 R-A·R-C 시험)', { skip: !local }, async () => {
+  const u = localUser('fb');
+  const tok = (await c.signIn(u.email, PW)).body.access_token;
+  ok(await c.rpc(tok, 'pds7_me'));
+  ok(await c.rpc(tok, 'pds7_save_observation', { p_question: 'q', p_metric: 'm', p_unit: '시간(분)', p_calc_rule: 'c', p_outlier_min: 0, p_outlier_max: 10, p_rounding_digits: 1, p_week_start: '월요일', p_plan_rule: 'r' }));
+  assert.throws(() => sql(`update public.pds7_observations set user_id = :'other' where user_id = :'id';`, { id: u.id, other: S.a.user.id }), /소유자는 변경할 수 없습니다/);
+  const myPlan = (await c.rpc(tok, 'pds7_create_plan', planBody('[시험] 피드백 계획'))).body;
   assert.throws(() => sql(`update public.pds7_plans set source_review_id = :'rv' where id = :'p';`, { rv: S.a.review, p: myPlan }), /pds7_plans_source_review_fk/);
-  sql(`delete from auth.users where id = :'id';`, { id });
+  sql(`delete from auth.users where id = :'id';`, { id: u.id });
 });

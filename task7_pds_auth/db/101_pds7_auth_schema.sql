@@ -7,6 +7,10 @@
 --   ① JWT 의 session_id 가 auth.sessions 에 살아 있는지(로그아웃·계정 삭제 시 행이 지워짐)
 --   ② 그 세션이 마지막 비밀번호 변경 이후에 만들어졌는지
 --   를 모든 요청에서 확인한다. 둘 중 하나라도 아니면 401.
+-- 회원: 자료 RPC 는 T07 회원(pds7_private.members)만 쓸 수 있다(아니면 403). 회원 등록(pds7_me)도 ①② 를 통과한 세션만 가능하다.
+--   비밀번호 변경 기록은 "회원" 과 "이 스키마 적용 뒤 만든 계정(아직 등록 전 포함)" 모두에 남긴다.
+--   → 등록 전에 바꾼 비밀번호도 기록되므로, 변경 전 세션으로 등록·접근이 되살아나지 않는다.
+--   스키마 적용 전부터 있던 공유 계정은 회원 등록 자체를 거절한다(403). 기록 대상에서 조용히 빼는 회원은 없다.
 -- 시간 규칙: Asia/Seoul 날짜. 오류 코드: PT401 → HTTP 401, PT404 → HTTP 404 (PostgREST 규약), 22023 → 400.
 
 begin;
@@ -41,9 +45,10 @@ alter table pds7_private.password_changes enable row level security;
 alter table pds7_private.settings enable row level security;
 revoke all on pds7_private.members, pds7_private.password_changes, pds7_private.settings from public, anon, authenticated;
 
--- 현재 요청의 사용자 ID. 세션이 살아 있고(로그아웃·삭제 안 됨, not_after 이전) 마지막 비밀번호 변경 이후 세션일 때만 반환.
+-- 현재 요청 세션의 사용자 ID(회원 여부 무관). 세션이 살아 있고(로그아웃·삭제 안 됨, not_after 이전)
+-- 마지막 비밀번호 변경 이후 세션일 때만 반환. 회원 등록(pds7_me)에서만 직접 쓴다.
 -- SECURITY DEFINER 인 이유: authenticated 역할은 auth.sessions 를 읽을 권한이 없다(읽기 권한을 주지 않기 위해 이 함수로 한정).
-create function pds7_private.current_user_id() returns uuid
+create function pds7_private.session_user_id() returns uuid
 language plpgsql stable security definer set search_path = '' as $$
 declare
   v_claims jsonb;
@@ -76,25 +81,41 @@ begin
   return null;
 end $$;
 
--- 로그인 필수: 유효하지 않으면 401
+-- 현재 요청의 T07 회원 ID: 유효한 세션 + 회원일 때만 반환(RLS 정책·자료 RPC 용).
+create function pds7_private.current_user_id() returns uuid
+language plpgsql stable security definer set search_path = '' as $$
+declare v_uid uuid := pds7_private.session_user_id();
+begin
+  if v_uid is not null and exists (select 1 from pds7_private.members m where m.user_id = v_uid) then
+    return v_uid;
+  end if;
+  return null;
+end $$;
+
+-- 로그인 + 회원 필수: 세션이 유효하지 않으면 401, 유효하지만 회원 등록 전이면 403
 create function pds7_private.require_user() returns uuid
 language plpgsql stable security definer set search_path = '' as $$
-declare v_uid uuid := pds7_private.current_user_id();
+declare v_uid uuid := pds7_private.session_user_id();
 begin
   if v_uid is null then
     raise sqlstate 'PT401' using message = '로그인이 필요합니다', hint = '다시 로그인하세요';
   end if;
+  if not exists (select 1 from pds7_private.members m where m.user_id = v_uid) then
+    raise sqlstate 'PT403' using message = '이 앱 회원 등록이 필요합니다', hint = '앱에서 다시 로그인하세요';
+  end if;
   return v_uid;
 end $$;
 
--- 비밀번호 변경 감지: auth.users.encrypted_password 가 바뀌면(앱·직접 Auth API·재설정 메일 모두) T07 회원의 변경 시각을 기록한다.
--- auth 테이블은 읽기·삭제하지 않고 pds7_private.password_changes 한 행만 쓴다(다른 계정·서비스 영향 없음).
+-- 비밀번호 변경 감지: auth.users.encrypted_password 가 바뀌면(앱·직접 Auth API·재설정 메일·관리자 변경 모두) 변경 시각을 기록한다.
+-- 대상: T07 회원 + 이 스키마 적용 뒤 만든 계정(회원 등록 전 포함 → 등록 전 변경도 빠짐없이 반영).
+-- 스키마 적용 전부터 있던 공유 계정(회원 등록 불가)은 기록하지 않는다. auth 테이블은 쓰지 않고 이 표 한 행만 쓴다.
 create function pds7_private.on_auth_password_change() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
   insert into pds7_private.password_changes (user_id, changed_at)
   select new.id, now()
    where exists (select 1 from pds7_private.members m where m.user_id = new.id)
+      or new.created_at >= (select st.value from pds7_private.settings st where st.key = 'schema_applied_at')
   on conflict (user_id) do update set changed_at = excluded.changed_at;
   return null;
 end $$;
@@ -105,7 +126,7 @@ create trigger pds7_on_password_change
   when (old.encrypted_password is distinct from new.encrypted_password)
   execute function pds7_private.on_auth_password_change();
 
-revoke all on function pds7_private.current_user_id(), pds7_private.require_user(),
+revoke all on function pds7_private.session_user_id(), pds7_private.current_user_id(), pds7_private.require_user(),
                        pds7_private.on_auth_password_change() from public, anon, authenticated;
 grant execute on function pds7_private.current_user_id() to authenticated;  -- RLS 정책용
 
@@ -382,12 +403,21 @@ $$;
 
 -- ───────────────────────── 계정 (카드 1·5) ─────────────────────────
 -- 로그인 직후 앱이 호출: T07 회원으로 등록하고 내 계정 정보만 돌려준다.
+-- 등록 조건: 유효한 세션(비밀번호 변경 전 세션이면 401) + 이 스키마 적용 뒤 만든 계정(아니면 403).
+-- 가입 시각은 "가입한 앱" 을 증명하지 않는다. 기존 공유 계정을 범위 밖에 두는 조건으로만 쓴다.
 create function public.pds7_me() returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
-  v_uid uuid := pds7_private.require_user();
+  v_uid uuid := pds7_private.session_user_id();
   v_email text;
 begin
+  if v_uid is null then
+    raise sqlstate 'PT401' using message = '로그인이 필요합니다', hint = '다시 로그인하세요';
+  end if;
+  if not exists (select 1 from pds7_private.members m where m.user_id = v_uid)
+     and (select u.created_at from auth.users u where u.id = v_uid) < (select st.value from pds7_private.settings st where st.key = 'schema_applied_at') then
+    raise sqlstate 'PT403' using message = '이 앱을 열기 전부터 있던 공유 계정은 쓸 수 없습니다. 새 이메일로 가입하세요';
+  end if;
   insert into pds7_private.members (user_id) values (v_uid) on conflict (user_id) do nothing;
   select email into v_email from auth.users where id = v_uid;
   return jsonb_build_object('user_id', v_uid, 'email', v_email,
@@ -395,8 +425,11 @@ begin
     'session_expires_at', to_timestamp((nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'exp')::bigint));
 end $$;
 
--- 계정 삭제: 최근 5분 안에 비밀번호로 다시 로그인한 세션 + 확인 문구가 있어야 한다.
+-- 계정 삭제: T07 회원 본인 + 최근 5분 안에 비밀번호로 다시 로그인한 세션 + 확인 문구가 있어야 한다.
 -- auth.users 행을 지우면 FK(on delete cascade)로 세션·리프레시 토큰·T07 자료가 함께 지워진다.
+-- 주의: 로그인 계정은 같은 Supabase 프로젝트 공용이다. 가입한 앱은 서버가 증명할 수 없으므로
+--   "이 앱에서 가입한 계정만" 이라고 보장하지 않는다. 같은 계정으로 들어가는 다른 서비스 로그인도 사라진다(화면에 안내).
+--   스키마 적용 전 계정은 회원이 될 수 없으므로 여기서도 거절한다(심층 방어).
 create function public.pds7_delete_account(p_confirm text) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -410,7 +443,7 @@ begin
   end if;
   if not exists (select 1 from pds7_private.members where user_id = v_uid)
      or (select created_at from auth.users where id = v_uid) < (select value from pds7_private.settings where key = 'schema_applied_at') then
-    raise sqlstate 'PT403' using message = '이 앱에서 가입한 계정만 여기서 삭제할 수 있습니다';
+    raise sqlstate 'PT403' using message = '이 앱 회원 계정만 여기서 삭제할 수 있습니다';
   end if;
   select created_at into v_session_created from auth.sessions where id = v_sid;
   if v_session_created is null or v_session_created < now() - interval '5 minutes' then
