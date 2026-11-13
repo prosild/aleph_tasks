@@ -845,6 +845,9 @@
         await sb.auth.signOut({ scope: 'local' }).catch(() => null);
         clearLocalAuth();
         signedOut(e.message, 'error', false);
+      } else if (!(e instanceof ApiError && e.status === 401)) {
+        // 서버 오류·네트워크 끊김: "불러오는 중"에 멈추지 않고 이유와 다시 시도 방법을 보여 준다(401 은 rpc 가 처리)
+        setStatus(`계정 확인 실패: ${e.message}. 새로고침으로 다시 시도하세요.`, 'error');
       }
       throw e;
     }

@@ -247,6 +247,20 @@ test('R-A·R-C: 이 앱을 열기 전부터 있던 공유 계정으로 로그인
   await ctx.close();
 });
 
+test('검토 지적 #2: 로그인 직후 회원 확인(pds7_me)이 서버 오류면 "불러오는 중"에 멈추지 않고 오류 안내', async () => {
+  const u = newLocalUser('meerr');
+  const n0 = consoleErrors.length;
+  const { ctx, page } = await newPage();
+  await page.route('**/rest/v1/rpc/pds7_me', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"시험용 서버 오류"}' }));
+  await page.goto(`${srv.url}`);
+  await uiLogin(page, u);
+  await page.waitForFunction(() => document.querySelector('#status').classList.contains('error'));
+  assert.match(await page.textContent('#status'), /계정 확인 실패: 시험용 서버 오류/);
+  await ctx.close();
+  const mine = consoleErrors.splice(n0);
+  consoleErrors.push(...mine.filter((e) => !/status of 500/.test(e)));
+});
+
 for (const failure of ['500', 'network']) {
   test(`R-B: 서버 로그아웃 실패(${failure}) → 이 브라우저 토큰은 지우고, 서버 폐기 실패를 그대로 안내, 새로고침·새 탭에도 로그인 안 됨`, async () => {
     const u = newLocalUser(`lo${failure}`);
