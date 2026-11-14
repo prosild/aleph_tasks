@@ -1,0 +1,21 @@
+-- T07 시험 계정 1개 생성(관리자 경로, 시험 전용). 비밀번호 원문은 이 SQL 에 없고 bcrypt 해시만 들어간다.
+-- 자리표시자: :email, :hash (bcrypt $2a$10$…, 로컬에서 만든 해시). 이메일 확인 완료 상태로 만든다(Confirm email 설정은 바꾸지 않음).
+-- 이미 같은 이메일이 있으면 아무것도 만들지 않는다.
+with u as (
+  insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+                          raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+                          confirmation_token, recovery_token, email_change_token_new, email_change,
+                          email_change_token_current, reauthentication_token, phone_change, phone_change_token)
+  select '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated',
+         :'email', :'hash', now(),
+         '{"provider":"email","providers":["email"],"t07_test_account":true}'::jsonb, '{}'::jsonb, now(), now(),
+         '', '', '', '', '', '', '', ''
+   where not exists (select 1 from auth.users where email = :'email')
+  returning id, email
+)
+insert into auth.identities (id, user_id, provider_id, provider, identity_data, last_sign_in_at, created_at, updated_at)
+select gen_random_uuid(), u.id, u.id::text, 'email',
+       jsonb_build_object('sub', u.id::text, 'email', u.email, 'email_verified', true, 'phone_verified', false),
+       null, now(), now()
+from u
+returning user_id;

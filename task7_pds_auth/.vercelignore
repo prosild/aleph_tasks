@@ -1,0 +1,9 @@
+tests
+db
+supabase
+vendor/node_modules
+vendor/package.json
+vendor/package-lock.json
+vendor/copy.mjs
+vendor/.gitignore
+README.md
