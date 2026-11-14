@@ -98,6 +98,8 @@
     if (code === 'same_password') return '지금 비밀번호와 다른 비밀번호를 입력하세요.';
     if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit' || e?.status === 429) return '요청이 많습니다. 잠시 후 다시 시도하세요.';
     if (code === 'validation_failed' || code === 'email_address_invalid') return '이메일 형식을 확인하세요.';
+    // 기본 메일 서버는 프로젝트 팀에 등록된 주소로만 확인 메일을 보낸다(Supabase 공식 문서)
+    if (code === 'email_address_not_authorized') return '이 주소로는 지금 확인 메일을 보낼 수 없습니다. 이 서비스의 메일 발송은 등록된 주소로만 허용됩니다.';
     if (action === 'login') return '이메일 또는 비밀번호가 맞지 않습니다.';
     return `${action === 'signup' ? '가입' : '요청'}을 처리하지 못했습니다. 잠시 후 다시 시도하세요.`;
   }

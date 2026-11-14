@@ -109,6 +109,22 @@ test('C94·C98·C112: 화면에서 가입 → 확인 메일 링크 → 주소의
   await ctx.close();
 });
 
+test('기본 메일 서버 제한: 허용되지 않은 주소 가입 → 다시 시도하라는 대신 발송 불가 이유 안내', async () => {
+  const n0 = consoleErrors.length;
+  const { ctx, page } = await newPage();
+  await page.route('**/auth/v1/signup**', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: '{"code":400,"error_code":"email_address_not_authorized","msg":"Email address not authorized"}' }));
+  await page.goto(`${srv.url}`);
+  await page.click('#tab-signup');
+  await page.fill('#signup-form [name=email]', 'not-allowed@example.com');
+  await page.fill('#signup-form [name=password]', 'Sample-pass-1234');
+  await page.fill('#signup-form [name=password2]', 'Sample-pass-1234');
+  await page.click('#signup-form button[type=submit]');
+  await page.waitForFunction(() => /확인 메일을 보낼 수 없습니다/.test(document.querySelector('#auth-msg').textContent));
+  await ctx.close();
+  const mine = consoleErrors.splice(n0);
+  consoleErrors.push(...mine.filter((e) => !/status of 400/.test(e)));
+});
+
 test('C99: 틀린 비밀번호·없는 이메일 → 같은 안내 문구', async () => {
   const u = newLocalUser('c99');
   const { ctx, page } = await newPage();
